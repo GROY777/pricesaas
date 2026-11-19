@@ -1,4 +1,5 @@
 import asyncio
+import json
 import secrets
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
@@ -28,16 +29,9 @@ async def lifespan(app: FastAPI):
         await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS free_prints_bonus INTEGER NOT NULL DEFAULT 0"))
         await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"))
         await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registered_ip VARCHAR(64)"))
-        defaults = [
-            ("classic-a4", "Классика Retail A4", "Универсальный шаблон", "a4", 0),
-            ("promo-a4", "Яркая Акция / Скидка", "Акцентный шаблон для акций", "a4", 0),
-            ("boutique-a4", "Бутик и Косметика Минимал", "Минималистичный дизайн", "a4", 290),
-            ("farmer-a4", "Фермерская Лавка / Крафт", "Тёплый стиль для фермерских товаров", "a4", 390),
-            ("premium-thermal", "Термо Премиум 58×40", "Премиальный термошаблон", "thermo", 490),
-            ("promo-thermal", "Термо Акция 58×40", "Термошаблон для акций", "thermo", 290),
-        ]
-        for slug, name, description, format_type, price in defaults:
-            await connection.execute(text("INSERT INTO price_templates (slug,name,description,format_type,price_rub,preview_css_config,is_active) VALUES (:slug,:name,:description,:format,:price,'{}',true) ON CONFLICT (slug) DO NOTHING"), {"slug":slug,"name":name,"description":description,"format":format_type,"price":price})
+        defaults = [('classic-a4', 'Классика Ритейл (А4)', 'Строгий белый ценник', 'a4', 0, {'background': '#ffffff', 'header': '#475569', 'accent': '#475569', 'price': '#0f172a', 'border': 'solid', 'layout': 'classic'}), ('promo-a4', 'Яркая Акция / Скидка (А4)', 'Жёлтый ценник для акции', 'a4', 0, {'background': '#fef08a', 'header': '#dc2626', 'accent': '#dc2626', 'price': '#dc2626', 'border': 'none', 'layout': 'promo', 'badge': 'АКЦИЯ'}), ('boutique-a4', 'Бутик и Косметика Минимал (А4)', 'Минимализм с двойной рамкой', 'a4', 290, {'background': '#ffffff', 'header': '#111111', 'accent': '#111111', 'price': '#111111', 'border': 'double', 'layout': 'boutique'}), ('farmer-a4', 'Фермерская Лавка / Эко (А4)', 'Тёплый эко-дизайн', 'a4', 390, {'background': '#fef3c7', 'header': '#14532d', 'accent': '#15803d', 'price': '#15803d', 'border': 'dashed', 'layout': 'eco'}), ('premium-thermal', 'Термо Премиум (58×40 мм)', 'Контрастный термошаблон', 'thermo', 490, {'background': '#ffffff', 'header': '#000000', 'accent': '#000000', 'price': '#000000', 'border': 'solid', 'layout': 'thermal'}), ('promo-thermal', 'Термо Скидка / Хит (58×40 мм)', 'Термошаблон с акцентом', 'thermo', 290, {'background': '#ffffff', 'header': '#111111', 'accent': '#b91c1c', 'price': '#b91c1c', 'border': 'solid', 'layout': 'thermal-promo', 'badge': 'ХИТ'})]
+        for slug, name, description, format_type, price, config in defaults:
+            await connection.execute(text("INSERT INTO price_templates (slug,name,description,format_type,price_rub,preview_css_config,is_active) VALUES (:slug,:name,:description,:format,:price,:config,true) ON CONFLICT (slug) DO UPDATE SET name=EXCLUDED.name, description=EXCLUDED.description, format_type=EXCLUDED.format_type, price_rub=EXCLUDED.price_rub, preview_css_config=EXCLUDED.preview_css_config"), {"slug":slug,"name":name,"description":description,"format":format_type,"price":price,"config":json.dumps(config,ensure_ascii=False)})
         await connection.execute(text("CREATE TABLE IF NOT EXISTS schema_markers (name VARCHAR(128) PRIMARY KEY)"))
         marker = await connection.execute(text("INSERT INTO schema_markers(name) VALUES ('free_templates_v1') ON CONFLICT DO NOTHING RETURNING name"))
         if marker.scalar():
