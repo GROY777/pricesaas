@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     yookassa_secret_key: str = ""
     jwt_expire_minutes: int = 60 * 24
     telegram_max_age_seconds: int = 86400
+    admin_email: str = ""
+
+    @property
+    def admin_emails(self) -> set[str]:
+        return {value.strip().lower() for value in self.admin_email.split(",") if value.strip()}
 
 
 @lru_cache

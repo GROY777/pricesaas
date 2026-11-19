@@ -41,6 +41,18 @@ async def current_tenant(credentials: HTTPAuthorizationCredentials | None = Depe
     tenant = await db.get(Tenant, tenant_id)
     if tenant is None:
         raise HTTPException(status_code=401, detail="Магазин не найден")
+    if not tenant.is_active:
+        raise HTTPException(status_code=403, detail="Store blocked")
+    return tenant
+
+
+async def get_current_admin(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: AsyncSession = Depends(get_db)) -> Tenant:
+    try:
+        tenant = await current_tenant(credentials, db)
+    except HTTPException:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if tenant.email.lower() not in get_settings().admin_emails:
+        raise HTTPException(status_code=403, detail="Access denied")
     return tenant
 
 
@@ -48,6 +60,8 @@ async def api_tenant(x_api_key: str = Header(), db: AsyncSession = Depends(get_d
     tenant = await db.scalar(select(Tenant).where(Tenant.api_key == x_api_key))
     if tenant is None:
         raise HTTPException(status_code=401, detail="Неверный API-ключ")
+    if not tenant.is_active:
+        raise HTTPException(status_code=403, detail="Store blocked")
     return tenant
 
 
@@ -82,4 +96,7 @@ async def telegram_user(x_telegram_init_data: str = Header(), db: AsyncSession =
     user = await db.scalar(select(User).where(User.telegram_id == data["id"]))
     if user is None:
         raise HTTPException(status_code=403, detail="Сначала подключитесь к магазину через бота")
+    tenant = await db.get(Tenant, user.tenant_id)
+    if tenant is None or not tenant.is_active:
+        raise HTTPException(status_code=403, detail="Store blocked")
     return user

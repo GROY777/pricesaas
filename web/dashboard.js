@@ -29,7 +29,7 @@ async function load() {
     setValue('link', data.deep_link);
     setText('today', data.printed_today);
     const active = data.plan === 'pro' && data.subscription_until && new Date(data.subscription_until) > new Date();
-    setText('subscription', active ? 'Активна до ' + new Date(data.subscription_until).toLocaleDateString('ru-RU') : 'Бесплатных ценников осталось: ' + Math.max(0, 30 - data.free_prints_used));
+    setText('subscription', active ? 'Активна до ' + new Date(data.subscription_until).toLocaleDateString('ru-RU') : 'Бесплатных ценников осталось: ' + Math.max(0, 30 + (data.free_prints_bonus || 0) - data.free_prints_used));
     const selected = document.querySelector(`input[name="template"][value="${CSS.escape(data.template_type)}"]`);
     if (selected) selected.checked = true;
   } catch (error) { setText('message', error.message); }

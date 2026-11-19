@@ -18,6 +18,8 @@ class Tenant(Base):
     plan: Mapped[str] = mapped_column(String(16), default="free")
     subscription_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     free_prints_used: Mapped[int] = mapped_column(Integer, default=0)
+    free_prints_bonus: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(default=True, index=True)
     template_type: Mapped[str] = mapped_column(String(32), default="a4_3x4")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

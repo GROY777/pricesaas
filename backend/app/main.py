@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 from .database import Base, engine
 from . import models
-from .routers import auth, agent, scanner, billing
+from .routers import auth, agent, scanner, billing, admin
 from .config import get_settings
 from .bot import run_bot
 from .moysklad import sync_loop
@@ -24,6 +24,8 @@ async def lifespan(app: FastAPI):
         await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS moysklad_token VARCHAR(1024)"))
         await connection.execute(text("ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ"))
         await connection.execute(text("ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS lock_token VARCHAR(64)"))
+        await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS free_prints_bonus INTEGER NOT NULL DEFAULT 0"))
+        await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"))
     task = asyncio.create_task(run_bot()) if get_settings().bot_token else None
     sync_task = asyncio.create_task(sync_loop())
     try:
@@ -44,3 +46,4 @@ app.include_router(auth.router)
 app.include_router(agent.router)
 app.include_router(scanner.router)
 app.include_router(billing.router)
+app.include_router(admin.router)

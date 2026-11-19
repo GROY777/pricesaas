@@ -32,7 +32,7 @@ async def print_labels(items: list[PrintItem], user: User = Depends(telegram_use
         raise HTTPException(422, "Укажите от 1 до 1000 ценников")
     tenant = await db.scalar(select(Tenant).where(Tenant.id == user.tenant_id).with_for_update())
     active = tenant.plan == "pro" and tenant.subscription_until is not None and tenant.subscription_until > datetime.now(timezone.utc)
-    if not active and tenant.free_prints_used + total > 30:
+    if not active and tenant.free_prints_used + total > 30 + tenant.free_prints_bonus:
         raise HTTPException(402, "Бесплатный лимит 30 ценников исчерпан. Оформите подписку в личном кабинете")
     products = (await db.scalars(select(Product).where(Product.tenant_id == tenant.id, Product.barcode.in_(quantities)))).all()
     by_barcode = {p.barcode: p for p in products}

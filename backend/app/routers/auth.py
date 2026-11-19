@@ -39,6 +39,8 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
     tenant = await db.scalar(select(Tenant).where(Tenant.email == str(data.email).lower()))
     if tenant is None or not password_hasher.verify(data.password, tenant.password_hash):
         raise HTTPException(401, "Неверный email или пароль")
+    if not tenant.is_active:
+        raise HTTPException(403, "Store blocked")
     return TokenResponse(access_token=create_token(tenant.id))
 
 
@@ -46,7 +48,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def me(tenant: Tenant = Depends(current_tenant), db: AsyncSession = Depends(get_db)):
     start = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
     printed = await db.scalar(select(func.coalesce(func.sum(PrintJob.items_count), 0)).where(PrintJob.tenant_id == tenant.id, PrintJob.status == "printed", PrintJob.created_at >= start))
-    return {"id": tenant.id, "email": tenant.email, "company_name": tenant.company_name, "api_key": tenant.api_key, "plan": tenant.plan, "subscription_until": tenant.subscription_until, "free_prints_used": tenant.free_prints_used, "template_type": tenant.template_type, "printed_today": printed, "moysklad_configured": bool(tenant.moysklad_token), "deep_link": f"https://t.me/{get_settings().bot_username}?start={tenant.invite_token}"}
+    return {"id": tenant.id, "email": tenant.email, "company_name": tenant.company_name, "api_key": tenant.api_key, "plan": tenant.plan, "subscription_until": tenant.subscription_until, "free_prints_used": tenant.free_prints_used, "free_prints_bonus": tenant.free_prints_bonus, "template_type": tenant.template_type, "printed_today": printed, "moysklad_configured": bool(tenant.moysklad_token), "deep_link": f"https://t.me/{get_settings().bot_username}?start={tenant.invite_token}"}
 
 
 @router.patch("/me/settings")
