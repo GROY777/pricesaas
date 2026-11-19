@@ -17,6 +17,7 @@ from .moysklad import sync_loop
 async def lifespan(app: FastAPI):
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await connection.execute(text("ALTER TABLE tenant_employees ALTER COLUMN is_active SET DEFAULT TRUE"))
         await connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_active_employee_telegram ON tenant_employees (telegram_id) WHERE is_active AND telegram_id IS NOT NULL"))
         await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS invite_token VARCHAR(64)"))
         missing = (await connection.execute(text("SELECT id FROM tenants WHERE invite_token IS NULL"))).scalars().all()
