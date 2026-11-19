@@ -60,7 +60,62 @@ def wrap(text, width, size, max_lines, font="PriceSnapBold"):
     return lines
 
 
+def draw_thermal_label(pdf, product, company_name, width, height, print_date):
+    pad = 2 * mm
+    usable = width - 2 * pad
+    pdf.setFillColor(colors.HexColor("#172033"))
+    pdf.setFont("PriceSnapBold", 6.5)
+    pdf.drawCentredString(width / 2, height - pad - 6.5, fit_text(company_name, usable, "PriceSnapBold", 6.5))
+    line_y = height - pad - 10
+    pdf.setStrokeColor(colors.HexColor("#94A3B8"))
+    pdf.setLineWidth(.4)
+    pdf.line(pad, line_y, width - pad, line_y)
+
+    name_size = 8
+    pdf.setFont("PriceSnapBold", name_size)
+    y = line_y - 12
+    for line in wrap(product.name, usable, name_size, 4):
+        pdf.drawCentredString(width / 2, y, line)
+        y -= 10
+
+    old = getattr(product, "old_price", None)
+    if old is not None and Decimal(old) > Decimal(product.price):
+        text = fit_text(f"{Decimal(old):.2f} ₽", usable, "PriceSnap", 7)
+        old_y = 29 * mm
+        pdf.setFont("PriceSnap", 7)
+        pdf.drawCentredString(width / 2, old_y, text)
+        old_width = pdfmetrics.stringWidth(text, "PriceSnap", 7)
+        pdf.line((width - old_width) / 2, old_y + 2.5, (width + old_width) / 2, old_y + 2.5)
+
+    rubles, kopecks = f"{Decimal(product.price):.2f}".split(".")
+    price_size = 27
+    cents_size = 9
+    cents_width = pdfmetrics.stringWidth(kopecks, "PriceSnapBold", cents_size)
+    while price_size > 8 and pdfmetrics.stringWidth(rubles, "PriceSnapBold", price_size) + cents_width + 3 > usable:
+        price_size -= 1
+    rubles_width = pdfmetrics.stringWidth(rubles, "PriceSnapBold", price_size)
+    price_x = (width - rubles_width - cents_width - 3) / 2
+    baseline = 17 * mm
+    pdf.setFillColor(colors.HexColor("#0F172A"))
+    pdf.setFont("PriceSnapBold", price_size)
+    pdf.drawString(price_x, baseline, rubles)
+    pdf.setFont("PriceSnapBold", cents_size)
+    pdf.drawString(price_x + rubles_width + 3, baseline + price_size * .4, kopecks)
+    pdf.setFont("PriceSnap", 6.5)
+    pdf.drawCentredString(width / 2, 13.5 * mm, fit_text("₽ / " + str(product.unit), usable, "PriceSnap", 6.5))
+
+    pdf.setStrokeColor(colors.HexColor("#94A3B8"))
+    pdf.line(pad, 11.5 * mm, width - pad, 11.5 * mm)
+    pdf.setFont("PriceSnap", 6)
+    barcode = fit_text("ШК: " + str(product.barcode), usable, "PriceSnap", 6)
+    pdf.drawCentredString(width / 2, 7.5 * mm, barcode)
+    pdf.drawCentredString(width / 2, 3.5 * mm, print_date.strftime("%d.%m.%Y"))
+
+
 def draw_label(pdf, product, company_name, width, height, thermal, promo, print_date):
+    if thermal:
+        draw_thermal_label(pdf, product, company_name, width, height, print_date)
+        return
     pad = (2.5 if thermal else 4) * mm
     usable = width - 2 * pad
     pdf.setFillColor(colors.HexColor("#172033"))
@@ -128,7 +183,7 @@ def draw_label(pdf, product, company_name, width, height, thermal, promo, print_
 def generate_pdf(path, items, template, company_name="PriceSnap"):
     register_font()
     thermal = template == "thermo_58x40"
-    page_size = (58 * mm, 40 * mm) if thermal else A4
+    page_size = (40 * mm, 58 * mm) if thermal else A4
     pdf = canvas.Canvas(str(path), pagesize=page_size)
     cell_w = page_size[0] if thermal else page_size[0] / 3
     cell_h = page_size[1] if thermal else page_size[1] / 4
