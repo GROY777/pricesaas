@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from .database import SessionLocal
 from .models import Product, Tenant
+from .product_sync import price_update_values
 
 URL = "https://api.moysklad.ru/api/remap/1.2/entity/assortment"
 log = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ async def sync_moysklad(tenant_id: int, token: str) -> int:
         values = list(products.values())
         for start in range(0, len(values), 500):
             statement = insert(Product).values(values[start:start + 500])
-            await db.execute(statement.on_conflict_do_update(index_elements=["tenant_id", "barcode"], set_={"name": statement.excluded.name, "price": statement.excluded.price, "unit": statement.excluded.unit, "updated_at": func.now()}))
+            await db.execute(statement.on_conflict_do_update(index_elements=["tenant_id", "barcode"], set_=price_update_values(statement)))
         await db.commit()
     return len(products)
 

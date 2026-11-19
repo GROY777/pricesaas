@@ -35,6 +35,19 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class TenantEmployee(Base):
+    __tablename__ = "tenant_employees"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    telegram_username: Mapped[str | None] = mapped_column(String(255))
+    full_name: Mapped[str] = mapped_column(String(255))
+    invite_token: Mapped[str] = mapped_column(String(64), unique=True, default=lambda: secrets.token_urlsafe(24))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Product(Base):
     __tablename__ = "products"
     __table_args__ = (UniqueConstraint("tenant_id", "barcode"),)
@@ -44,6 +57,9 @@ class Product(Base):
     name: Mapped[str] = mapped_column(String(255))
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     old_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    previous_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    price_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    needs_reprint: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     unit: Mapped[str] = mapped_column(String(32), default="шт.")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

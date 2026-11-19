@@ -85,7 +85,7 @@ def draw_thermal_label(pdf, product, company_name, width, height, print_date):
         y -= name_size + 1
 
     old = getattr(product, "old_price", None)
-    if old is not None and Decimal(old) > Decimal(product.price):
+    if old is not None and Decimal(old) != Decimal(product.price):
         text = fit_text(f"{Decimal(old):.2f} ₽", usable * .55, "PriceSnap", 6)
         old_y = 20.5 * mm
         pdf.setFont("PriceSnap", 6)
@@ -154,7 +154,7 @@ def draw_label(pdf, product, company_name, width, height, thermal, promo, print_
         pdf.setFillColor(colors.HexColor("#172033"))
 
     old = getattr(product, "old_price", None)
-    if old is not None and Decimal(old) > Decimal(product.price):
+    if old is not None and Decimal(old) != Decimal(product.price):
         old_text = f"{Decimal(old):.2f} ₽"
         old_size = 6 if thermal else 8
         old_y = (20 if thermal else 23) * mm
@@ -225,7 +225,7 @@ def draw_configured_label(pdf, product, company_name, width, height, config, pri
         if layout == "boutique": pdf.drawCentredString(width / 2, y, line)
         else: pdf.drawString(pad, y, line)
         y -= 11
-    if config.get("show_old_price", True) and product.old_price is not None and product.old_price > product.price:
+    if config.get("show_old_price", True) and product.old_price is not None and product.old_price != product.price:
         pdf.setFont("PriceSnap", 7); old = str(product.old_price)
         x = pad if layout in ("promo", "thermal-promo") else width - pad - pdfmetrics.stringWidth(old, "PriceSnap", 7)
         pdf.drawString(x, 18 * mm, old); pdf.line(x, 18 * mm + 2, x + pdfmetrics.stringWidth(old, "PriceSnap", 7), 18 * mm + 2)

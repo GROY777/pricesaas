@@ -10,6 +10,7 @@ from ..database import get_db
 from ..models import PrintJob, Product, Tenant
 from ..schemas import ProductInput
 from ..security import api_tenant
+from ..product_sync import price_update_values
 
 router = APIRouter(prefix="/api", tags=["agent"])
 JOBS_DIR = Path("/app/media/jobs")
@@ -23,7 +24,9 @@ async def sync(items: list[ProductInput], tenant: Tenant = Depends(api_tenant), 
     if unique:
         rows = [{**item.model_dump(), "tenant_id": tenant.id} for item in unique.values()]
         statement = insert(Product).values(rows)
-        statement = statement.on_conflict_do_update(index_elements=["tenant_id", "barcode"], set_={"name": statement.excluded.name, "price": statement.excluded.price, "old_price": statement.excluded.old_price, "unit": statement.excluded.unit, "updated_at": func.now()})
+        values = price_update_values(statement)
+        values["old_price"] = statement.excluded.old_price
+        statement = statement.on_conflict_do_update(index_elements=["tenant_id", "barcode"], set_=values)
         await db.execute(statement)
         await db.commit()
     return {"synced": len(unique)}

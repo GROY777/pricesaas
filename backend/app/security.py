@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from .config import get_settings
 from .database import get_db
-from .models import Tenant, User, UsedFreeDevice
+from .models import Tenant, User, UsedFreeDevice, TenantEmployee
 
 password_hasher = PasswordHash.recommended()
 bearer = HTTPBearer(auto_error=False)
@@ -106,7 +106,13 @@ async def telegram_user(x_telegram_init_data: str = Header(), db: AsyncSession =
         data = verify_telegram_init_data(x_telegram_init_data)
     except (ValueError, TypeError, KeyError, json.JSONDecodeError):
         raise HTTPException(status_code=401, detail="Неверные данные Telegram")
-    user = await db.scalar(select(User).where(User.telegram_id == data["id"]))
+    employee = await db.scalar(select(TenantEmployee).where(TenantEmployee.telegram_id == data["id"]).order_by(TenantEmployee.is_active.desc(), TenantEmployee.id.desc()).limit(1))
+    if employee is not None:
+        if not employee.is_active:
+            raise HTTPException(status_code=403, detail="Ваш доступ к печати ценников отозван владельцем магазина")
+        user = employee
+    else:
+        user = await db.scalar(select(User).where(User.telegram_id == data["id"]))
     if user is None:
         raise HTTPException(status_code=403, detail="Сначала подключитесь к магазину через бота")
     tenant = await db.get(Tenant, user.tenant_id)
