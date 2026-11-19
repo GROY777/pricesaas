@@ -10,6 +10,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=256)
     company_name: str = Field(min_length=1, max_length=255)
+    accepted_terms: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -27,6 +28,7 @@ class SettingsRequest(BaseModel):
     regenerate_api_key: bool = False
     regenerate_invite_token: bool = False
     moysklad_token: str | None = Field(default=None, max_length=1024)
+    company_name: str | None = Field(default=None, min_length=1, max_length=255)
 
 
 class ProductInput(BaseModel):

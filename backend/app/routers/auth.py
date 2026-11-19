@@ -19,6 +19,8 @@ router = APIRouter(prefix="/api", tags=["auth"])
 
 @router.post("/auth/register", response_model=TokenResponse, status_code=201)
 async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    if not data.accepted_terms:
+        raise HTTPException(422, "Примите Пользовательское соглашение и Политику конфиденциальности")
     tenant = Tenant(email=str(data.email).lower(), password_hash=password_hasher.hash(data.password), company_name=data.company_name.strip(), api_key=new_api_key())
     if not tenant.company_name:
         raise HTTPException(422, "Укажите название компании")
@@ -49,6 +51,11 @@ async def me(tenant: Tenant = Depends(current_tenant), db: AsyncSession = Depend
 
 @router.patch("/me/settings")
 async def settings(data: SettingsRequest, tenant: Tenant = Depends(current_tenant), db: AsyncSession = Depends(get_db)):
+    if data.company_name is not None:
+        company_name = data.company_name.strip()
+        if not company_name:
+            raise HTTPException(422, "Укажите название магазина")
+        tenant.company_name = company_name
     if data.template_type is not None:
         tenant.template_type = data.template_type
     if data.regenerate_api_key:
@@ -58,7 +65,7 @@ async def settings(data: SettingsRequest, tenant: Tenant = Depends(current_tenan
     if "moysklad_token" in data.model_fields_set:
         tenant.moysklad_token = data.moysklad_token.strip() if data.moysklad_token else None
     await db.commit()
-    return {"template_type": tenant.template_type, "api_key": tenant.api_key}
+    return {"template_type": tenant.template_type, "api_key": tenant.api_key, "company_name": tenant.company_name}
 
 
 @router.post("/me/sync-moysklad")

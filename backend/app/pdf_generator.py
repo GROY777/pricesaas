@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -8,45 +9,123 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
-FONT_PATHS = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:/Windows/Fonts/arial.ttf"]
+FONTS = [
+    ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    ("C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/arialbd.ttf"),
+]
 
 
 def register_font():
-    for path in FONT_PATHS:
-        if Path(path).is_file():
-            pdfmetrics.registerFont(TTFont("PriceSnap", path))
+    for regular, bold in FONTS:
+        if Path(regular).is_file() and Path(bold).is_file():
+            pdfmetrics.registerFont(TTFont("PriceSnap", regular))
+            pdfmetrics.registerFont(TTFont("PriceSnapBold", bold))
             return
     raise RuntimeError("Не найден шрифт с поддержкой кириллицы")
 
 
-def wrap(text, width, size, max_lines):
-    words = text.split()
+def fit_text(text, width, font, size):
+    text = str(text).replace("\n", " ").strip()
+    if pdfmetrics.stringWidth(text, font, size) <= width:
+        return text
+    while text and pdfmetrics.stringWidth(text + "…", font, size) > width:
+        text = text[:-1]
+    return text.rstrip() + "…"
+
+
+def wrap(text, width, size, max_lines, font="PriceSnapBold"):
+    words = str(text).split()
     lines = []
-    current = ""
-    while words:
-        word = words.pop(0)
-        candidate = (current + " " + word).strip()
-        if pdfmetrics.stringWidth(candidate, "PriceSnap", size) <= width:
-            current = candidate
-        elif current:
-            lines.append(current)
-            current = ""
-            words.insert(0, word)
-        else:
-            cut = len(word)
-            while cut > 1 and pdfmetrics.stringWidth(word[:cut], "PriceSnap", size) > width:
-                cut -= 1
-            lines.append(word[:cut])
-            if word[cut:]:
-                words.insert(0, word[cut:])
-        if len(lines) == max_lines:
-            break
-    if current and len(lines) < max_lines:
-        lines.append(current)
+    while words and len(lines) < max_lines:
+        line = ""
+        while words:
+            candidate = (line + " " + words[0]).strip()
+            if pdfmetrics.stringWidth(candidate, font, size) <= width:
+                line = candidate
+                words.pop(0)
+            elif not line:
+                word = words.pop(0)
+                cut = len(word)
+                while cut > 1 and pdfmetrics.stringWidth(word[:cut], font, size) > width:
+                    cut -= 1
+                line = word[:cut]
+                if word[cut:]:
+                    words.insert(0, word[cut:])
+                break
+            else:
+                break
+        lines.append(line)
+    if words and lines:
+        lines[-1] = fit_text(lines[-1] + "…", width, font, size)
     return lines
 
 
-def generate_pdf(path, items, template):
+def draw_label(pdf, product, company_name, width, height, thermal, promo, print_date):
+    pad = (2.5 if thermal else 4) * mm
+    usable = width - 2 * pad
+    pdf.setFillColor(colors.HexColor("#172033"))
+    header_size = 6 if thermal else 8
+    pdf.setFont("PriceSnapBold", header_size)
+    pdf.drawCentredString(width / 2, height - pad - header_size, fit_text(company_name, usable, "PriceSnapBold", header_size))
+    line_y = height - pad - header_size - 3
+    pdf.setStrokeColor(colors.HexColor("#94A3B8"))
+    pdf.setLineWidth(.4)
+    pdf.line(pad, line_y, width - pad, line_y)
+
+    name_size = 8 if thermal else 10
+    y = line_y - name_size - 4
+    pdf.setFont("PriceSnapBold", name_size)
+    for line in wrap(product.name, usable, name_size, 2 if thermal else 3):
+        pdf.drawString(pad, y, line)
+        y -= name_size + 2
+
+    if promo:
+        badge_y = 26 * mm
+        pdf.setFillColor(colors.HexColor("#C81E1E"))
+        pdf.roundRect(pad, badge_y, 20 * mm, 6 * mm, 2, fill=1, stroke=0)
+        pdf.setFillColor(colors.white)
+        pdf.setFont("PriceSnapBold", 8)
+        pdf.drawCentredString(pad + 10 * mm, badge_y + 2 * mm, "АКЦИЯ")
+        pdf.setFillColor(colors.HexColor("#172033"))
+
+    old = getattr(product, "old_price", None)
+    if old is not None and Decimal(old) > Decimal(product.price):
+        old_text = f"{Decimal(old):.2f} ₽"
+        old_size = 6 if thermal else 8
+        old_y = (20 if thermal else 23) * mm
+        pdf.setFont("PriceSnap", old_size)
+        pdf.drawRightString(width - pad, old_y, old_text)
+        old_width = pdfmetrics.stringWidth(old_text, "PriceSnap", old_size)
+        pdf.line(width - pad - old_width, old_y + old_size * .35, width - pad, old_y + old_size * .35)
+
+    rubles, kopecks = f"{Decimal(product.price):.2f}".split(".")
+    size = 25 if thermal else 34
+    while size > 10 and pdfmetrics.stringWidth(rubles, "PriceSnapBold", size) > usable * .65:
+        size -= 1
+    baseline = (11 if thermal else 12) * mm
+    pdf.setFillColor(colors.HexColor("#0F172A"))
+    pdf.setFont("PriceSnapBold", size)
+    pdf.drawString(pad, baseline, rubles)
+    end = pad + pdfmetrics.stringWidth(rubles, "PriceSnapBold", size) + 2
+    pdf.setFont("PriceSnapBold", 9 if thermal else 11)
+    pdf.drawString(end, baseline + size * .43, kopecks)
+    unit = fit_text("₽ / " + str(product.unit), usable * .42, "PriceSnap", 6 if thermal else 7)
+    pdf.setFont("PriceSnap", 6 if thermal else 7)
+    pdf.drawRightString(width - pad, baseline, unit)
+
+    footer_line = 7.5 * mm
+    pdf.setStrokeColor(colors.HexColor("#94A3B8"))
+    pdf.line(pad, footer_line, width - pad, footer_line)
+    pdf.setFont("PriceSnap", 5.5 if thermal else 6.5)
+    footer_size = 5.5 if thermal else 6.5
+    date_text = print_date.strftime("%d.%m.%Y")
+    date_width = pdfmetrics.stringWidth(date_text, "PriceSnap", footer_size)
+    barcode = fit_text("ШК: " + str(product.barcode), usable - date_width - 4, "PriceSnap", footer_size)
+    pdf.drawString(pad, 4 * mm, barcode)
+    pdf.drawRightString(width - pad, 4 * mm, date_text)
+
+
+def generate_pdf(path, items, template, company_name="PriceSnap"):
     register_font()
     thermal = template == "thermo_58x40"
     page_size = (58 * mm, 40 * mm) if thermal else A4
@@ -54,54 +133,20 @@ def generate_pdf(path, items, template):
     cell_w = page_size[0] if thermal else page_size[0] / 3
     cell_h = page_size[1] if thermal else page_size[1] / 4
     count = 0
+    print_date = datetime.now()
     for product, quantity in items:
         for _ in range(quantity):
             if count and (thermal or count % 12 == 0):
                 pdf.showPage()
             slot = 0 if thermal else count % 12
-            x = (slot % 3) * cell_w
-            y = page_size[1] - (slot // 3 + 1) * cell_h
             pdf.saveState()
-            pdf.translate(x, y)
+            pdf.translate((slot % 3) * cell_w, page_size[1] - (slot // 3 + 1) * cell_h)
             if not thermal:
+                pdf.setStrokeColor(colors.HexColor("#94A3B8"))
                 pdf.setDash(2, 2)
                 pdf.rect(0, 0, cell_w, cell_h)
                 pdf.setDash()
-            pad = 4 * mm
-            top = cell_h - pad
-            if template == "a4_promo":
-                pdf.setFillColor(colors.red)
-                pdf.rect(pad, top - 7 * mm, cell_w - 2 * pad, 7 * mm, fill=1, stroke=0)
-                pdf.setFillColor(colors.white)
-                pdf.setFont("PriceSnap", 12)
-                pdf.drawCentredString(cell_w / 2, top - 5 * mm, "АКЦИЯ")
-                pdf.setFillColor(colors.black)
-                top -= 9 * mm
-            font_size = 8 if thermal else 10
-            pdf.setFont("PriceSnap", font_size)
-            for line in wrap(product.name, cell_w - 2 * pad, font_size, 2 if thermal else 3):
-                top -= font_size + 2
-                pdf.drawString(pad, top, line)
-            if template == "a4_promo" and product.old_price is not None:
-                old = f"{product.old_price:.2f} ₽"
-                pdf.setFont("PriceSnap", 10)
-                pdf.drawString(pad, 25 * mm, old)
-                pdf.line(pad, 26 * mm, pad + pdfmetrics.stringWidth(old, "PriceSnap", 10), 26 * mm)
-            price = f"{Decimal(product.price):.2f}"
-            rubles, kopecks = price.split(".")
-            price_size = 24 if thermal else 30
-            while price_size > 12 and pdfmetrics.stringWidth(rubles, "PriceSnap", price_size) > cell_w - 28 * mm:
-                price_size -= 1
-            pdf.setFont("PriceSnap", price_size)
-            baseline = 12 * mm if thermal else 13 * mm
-            pdf.drawString(pad, baseline, rubles)
-            pdf.setFont("PriceSnap", 11)
-            pdf.drawString(pad + pdfmetrics.stringWidth(rubles, "PriceSnap", price_size) + 2, baseline + 5, kopecks + " ₽")
-            pdf.setFont("PriceSnap", 7)
-            pdf.drawRightString(cell_w - pad, baseline - 2, "/ " + product.unit)
-            pdf.drawString(pad, 5 * mm, product.barcode)
-            if not thermal:
-                pdf.drawRightString(cell_w - pad, 5 * mm, datetime.now().strftime("%d.%m.%Y"))
+            draw_label(pdf, product, company_name, cell_w, cell_h, thermal, template == "a4_promo", print_date)
             pdf.restoreState()
             count += 1
     pdf.save()

@@ -42,7 +42,7 @@ async def print_labels(items: list[PrintItem], user: User = Depends(telegram_use
     filename = f"{uuid4().hex}.pdf"
     path = JOBS_DIR / filename
     try:
-        generate_pdf(path, [(by_barcode[code], quantity) for code, quantity in quantities.items()], tenant.template_type)
+        generate_pdf(path, [(by_barcode[code], quantity) for code, quantity in quantities.items()], tenant.template_type, company_name=tenant.company_name)
         if not active:
             tenant.free_prints_used += total
         job = PrintJob(tenant_id=tenant.id, created_by_tg_id=user.telegram_id, items_count=total, pdf_filename=filename)
