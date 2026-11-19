@@ -30,8 +30,8 @@ def test_invitation_price_sync_and_print(tmp_path, monkeypatch):
             db.add(tenant); await db.commit()
             result = await employees.invite(employees.Invite(full_name='Cashier'), tenant, db)
             token = parse_qs(urlparse(result['url']).query)['start'][0][7:]
-            assert await activate_employee(db, token, 876543, 'cashier')
-            assert not await activate_employee(db, token, 987654, 'other')
+            assert await activate_employee(db, token, 876543, 'cashier') == 'activated'
+            assert await activate_employee(db, token, 987654, 'other') == 'invalid'
             assert (await security.telegram_user('signed', db)).tenant_id == tenant.id
             await employees.revoke(result['id'], tenant, db)
             with pytest.raises(HTTPException) as exc:
