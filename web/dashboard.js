@@ -1,0 +1,69 @@
+const token = localStorage.getItem('token');
+if (!token) location.href = '/';
+const byId = id => document.getElementById(id);
+const setText = (id, text) => { const el = byId(id); if (el) el.textContent = text; };
+const setValue = (id, value) => { const el = byId(id); if (el) el.value = value ?? ''; };
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {...options, headers: {Authorization: 'Bearer ' + token, ...options.headers}});
+  if (response.status === 401) {
+    localStorage.removeItem('token');
+    location.href = '/';
+    throw Error('Сессия завершена');
+  }
+  if (!response.ok) {
+    const data = await response.json();
+    throw Error(typeof data.detail === 'string' ? data.detail : 'Ошибка запроса');
+  }
+  return response;
+}
+
+async function load() {
+  try {
+    const data = await (await api('/api/me')).json();
+    setText('integrationStatus', data.moysklad_configured ? 'МойСклад подключён' : 'Настроить интеграцию');
+    setText('companyName', data.company_name);
+    setText('planBadge', data.plan === 'pro' ? 'Магазин' : 'Старт');
+    setValue('companyInput', data.company_name);
+    setValue('key', data.api_key);
+    setValue('link', data.deep_link);
+    setText('today', data.printed_today);
+    const active = data.plan === 'pro' && data.subscription_until && new Date(data.subscription_until) > new Date();
+    setText('subscription', active ? 'Активна до ' + new Date(data.subscription_until).toLocaleDateString('ru-RU') : 'Бесплатных ценников осталось: ' + Math.max(0, 30 - data.free_prints_used));
+    const selected = document.querySelector(`input[name="template"][value="${CSS.escape(data.template_type)}"]`);
+    if (selected) selected.checked = true;
+  } catch (error) { setText('message', error.message); }
+}
+
+const templates = byId('templates');
+if (templates) templates.onchange = async event => {
+  try { await api('/api/me/settings', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({template_type:event.target.value})}); }
+  catch (error) { setText('message', error.message); }
+};
+async function regenerate() {
+  if (!confirm('Обновить ключ? Подключённым агентам понадобится новый ключ.')) return;
+  try { await api('/api/me/settings', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({regenerate_api_key:true})}); await load(); }
+  catch (error) { setText('message', error.message); }
+}
+async function renewInvite() {
+  if (!confirm('Отозвать старую ссылку и создать новую?')) return;
+  try { await api('/api/me/settings', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({regenerate_invite_token:true})}); await load(); }
+  catch (error) { setText('message', error.message); }
+}
+async function copyValue(id) {
+  const el = byId(id);
+  if (!el) return;
+  try { await navigator.clipboard.writeText(el.value); }
+  catch (error) { setText('message', 'Не удалось скопировать значение'); }
+}
+async function pay() {
+  try { const data = await (await api('/api/billing/create-payment', {method:'POST'})).json(); location.href = data.confirmation_url; }
+  catch (error) { setText('message', error.message); }
+}
+async function download() {
+  try {
+    const blob = await (await api('/api/download/agent')).blob();
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'PriceAgent_Setup.exe'; link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+  } catch (error) { setText('message', error.message); }
+}
