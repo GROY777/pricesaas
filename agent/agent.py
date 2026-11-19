@@ -15,6 +15,8 @@ import customtkinter as ctk
 import pandas as pd
 import pystray
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import win32api
 import win32print
 from PIL import Image, ImageDraw
@@ -87,6 +89,13 @@ class App(ctk.CTk):
         self.timer = None
         self.observer = None
         self.tray = None
+        self.http = requests.Session()
+        # A configured Windows/enterprise proxy can time out on the VPS endpoint.
+        # PriceSnap uses its own HTTPS origin, so connect directly to it.
+        self.http.trust_env = False
+        retry = Retry(total=3, connect=3, read=0, backoff_factor=0.7, allowed_methods=frozenset({"GET", "POST"}))
+        self.http.mount("https://", HTTPAdapter(max_retries=retry))
+        self.http.mount("http://", HTTPAdapter(max_retries=retry))
         try:
             data = json.loads(CONFIG.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -135,7 +144,7 @@ class App(ctk.CTk):
 
     def save(self):
         try:
-            response = requests.post(self.endpoint("/api/sync"), headers=self.headers(), json=[], timeout=15)
+            response = self.http.post(self.endpoint("/api/sync"), headers=self.headers(), json=[], timeout=(8, 20))
             response.raise_for_status()
             CONFIG.parent.mkdir(parents=True, exist_ok=True)
             CONFIG.write_text(json.dumps({"url": self.url.get(), "key": self.key.get(), "path": self.path.get(), "printer": self.printer.get(), "autostart": self.autostart.get()}, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -178,7 +187,7 @@ class App(ctk.CTk):
             self.notify("Синхронизация…")
             products = read_products(self.path.get())
             for start in range(0, len(products), 500):
-                response = requests.post(self.endpoint("/api/sync"), headers=self.headers(), json=products[start:start + 500], timeout=30)
+                response = self.http.post(self.endpoint("/api/sync"), headers=self.headers(), json=products[start:start + 500], timeout=(8, 45))
                 response.raise_for_status()
             self.notify(f"Синхронизировано товаров: {len(products)}")
         except Exception as exc:
@@ -191,11 +200,11 @@ class App(ctk.CTk):
             if not self.key.get() or not self.printer.get():
                 continue
             try:
-                jobs = requests.get(self.endpoint("/api/agent/jobs"), headers=self.headers(), timeout=15)
+                jobs = self.http.get(self.endpoint("/api/agent/jobs"), headers=self.headers(), timeout=(8, 25))
                 jobs.raise_for_status()
                 for job in jobs.json():
                     job_headers = {**self.headers(), "X-Job-Token": job["lock_token"]}
-                    response = requests.get(self.endpoint(job["file_url"]), headers=job_headers, timeout=30)
+                    response = self.http.get(self.endpoint(job["file_url"]), headers=job_headers, timeout=(8, 60))
                     response.raise_for_status()
                     with tempfile.TemporaryDirectory() as directory:
                         path = Path(directory) / "label.pdf"
@@ -206,9 +215,13 @@ class App(ctk.CTk):
                         else:
                             win32api.ShellExecute(0, "printto", str(path), f'"{self.printer.get()}"', ".", 0)
                             time.sleep(5)
-                    ack = requests.post(self.endpoint(f'/api/agent/jobs/{job["id"]}/ack'), headers=job_headers, timeout=15)
+                    ack = self.http.post(self.endpoint(f'/api/agent/jobs/{job["id"]}/ack'), headers=job_headers, timeout=(8, 25))
                     ack.raise_for_status()
                     self.notify(f'Задание {job["id"]} отправлено на принтер')
+            except requests.Timeout:
+                self.notify("Сервер временно не отвечает. Повтор через 3 секунды…")
+            except requests.RequestException as exc:
+                self.notify(f"Сетевая ошибка: {exc}")
             except Exception as exc:
                 self.notify(f"Ошибка печати: {exc}")
 
@@ -228,6 +241,7 @@ class App(ctk.CTk):
 
     def quit_app(self):
         self.stop.set()
+        self.http.close()
         if self.timer:
             self.timer.cancel()
         if self.observer:

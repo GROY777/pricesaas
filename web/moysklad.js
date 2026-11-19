@@ -1,6 +1,6 @@
 const moySection = document.createElement('section');
-moySection.className = 'bg-white rounded-2xl p-6 space-y-4';
-moySection.innerHTML = '<h2 class="text-xl font-bold">МойСклад</h2><p class="text-slate-600">Укажите токен для синхронизации товаров каждые 15 минут.</p><input id="moyToken" type="password" autocomplete="off" placeholder="Токен МойСклад" class="border rounded p-2 w-full"><div class="flex gap-3 flex-wrap"><button id="saveMoy" class="text-blue-700">Сохранить токен</button><button id="clearMoy" class="text-red-700">Удалить токен</button><button id="syncMoy" class="bg-blue-700 text-white px-3 py-2 rounded-lg">Синхронизировать</button></div><p id="moyStatus" role="status"></p>';
+moySection.className = 'card panel space-y-4';
+moySection.innerHTML = '<div class="iconbox">↻</div><h2>МойСклад</h2><p>Укажите токен для синхронизации товаров каждые 15 минут.</p><input id="moyToken" type="password" autocomplete="off" placeholder="Токен МойСклад" class="field"><div class="flex gap-3 flex-wrap items-center"><button id="saveMoy" class="btn btn-primary">Сохранить токен</button><button id="clearMoy" class="text-sm text-slate-500">Удалить токен</button><button id="syncMoy" class="btn btn-light">Синхронизировать</button></div><p id="moyStatus" role="status"></p>';
 document.querySelector('main > div.grid').append(moySection);
 async function saveMoyToken(value) {
   try {
