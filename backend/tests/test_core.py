@@ -51,8 +51,8 @@ class PdfTests(unittest.TestCase):
                 self.assertEqual(len(pages), expected_pages)
                 self.assertIn("Молоко", pages[0].extract_text())
                 if template == "thermo_58x40":
-                    self.assertAlmostEqual(float(pages[0].mediabox.width) * 25.4 / 72, 40, places=2)
-                    self.assertAlmostEqual(float(pages[0].mediabox.height) * 25.4 / 72, 58, places=2)
+                    self.assertAlmostEqual(float(pages[0].mediabox.width) * 25.4 / 72, 58, places=2)
+                    self.assertAlmostEqual(float(pages[0].mediabox.height) * 25.4 / 72, 40, places=2)
 
 
 if __name__ == "__main__":

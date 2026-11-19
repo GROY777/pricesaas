@@ -211,7 +211,7 @@ class App(ctk.CTk):
                         path.write_bytes(response.content)
                         bundled = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "SumatraPDF.exe"
                         if bundled.is_file():
-                            subprocess.run([str(bundled), "-print-to", self.printer.get(), "-silent", str(path)], check=True, timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
+                            subprocess.run([str(bundled), "-print-to", self.printer.get(), "-print-settings", "noscale", "-silent", str(path)], check=True, timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
                         else:
                             win32api.ShellExecute(0, "printto", str(path), f'"{self.printer.get()}"', ".", 0)
                             time.sleep(5)

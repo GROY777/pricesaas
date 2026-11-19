@@ -61,7 +61,7 @@ def wrap(text, width, size, max_lines, font="PriceSnapBold"):
 
 
 def draw_thermal_label(pdf, product, company_name, width, height, print_date):
-    pad = 2 * mm
+    pad = 2.5 * mm
     usable = width - 2 * pad
     pdf.setFillColor(colors.HexColor("#172033"))
     pdf.setFont("PriceSnapBold", 6.5)
@@ -74,42 +74,46 @@ def draw_thermal_label(pdf, product, company_name, width, height, print_date):
     name_size = 8
     pdf.setFont("PriceSnapBold", name_size)
     y = line_y - 12
-    for line in wrap(product.name, usable, name_size, 4):
+    for line in wrap(product.name, usable, name_size, 2):
         pdf.drawCentredString(width / 2, y, line)
         y -= 10
 
     old = getattr(product, "old_price", None)
     if old is not None and Decimal(old) > Decimal(product.price):
-        text = fit_text(f"{Decimal(old):.2f} ₽", usable, "PriceSnap", 7)
-        old_y = 29 * mm
-        pdf.setFont("PriceSnap", 7)
-        pdf.drawCentredString(width / 2, old_y, text)
-        old_width = pdfmetrics.stringWidth(text, "PriceSnap", 7)
-        pdf.line((width - old_width) / 2, old_y + 2.5, (width + old_width) / 2, old_y + 2.5)
+        text = fit_text(f"{Decimal(old):.2f} ₽", usable * .55, "PriceSnap", 6)
+        old_y = 20.5 * mm
+        pdf.setFont("PriceSnap", 6)
+        pdf.drawString(pad, old_y, text)
+        old_width = pdfmetrics.stringWidth(text, "PriceSnap", 6)
+        pdf.line(pad, old_y + 2, pad + old_width, old_y + 2)
 
     rubles, kopecks = f"{Decimal(product.price):.2f}".split(".")
-    price_size = 27
+    price_size = 25
     cents_size = 9
     cents_width = pdfmetrics.stringWidth(kopecks, "PriceSnapBold", cents_size)
-    while price_size > 8 and pdfmetrics.stringWidth(rubles, "PriceSnapBold", price_size) + cents_width + 3 > usable:
+    unit = fit_text("₽ / " + str(product.unit), usable * .25, "PriceSnap", 6.5)
+    unit_width = pdfmetrics.stringWidth(unit, "PriceSnap", 6.5)
+    while price_size > 8 and pdfmetrics.stringWidth(rubles, "PriceSnapBold", price_size) + cents_width + 3 > usable - 2 * unit_width:
         price_size -= 1
     rubles_width = pdfmetrics.stringWidth(rubles, "PriceSnapBold", price_size)
     price_x = (width - rubles_width - cents_width - 3) / 2
-    baseline = 17 * mm
+    baseline = 11.5 * mm
     pdf.setFillColor(colors.HexColor("#0F172A"))
     pdf.setFont("PriceSnapBold", price_size)
     pdf.drawString(price_x, baseline, rubles)
     pdf.setFont("PriceSnapBold", cents_size)
     pdf.drawString(price_x + rubles_width + 3, baseline + price_size * .4, kopecks)
     pdf.setFont("PriceSnap", 6.5)
-    pdf.drawCentredString(width / 2, 13.5 * mm, fit_text("₽ / " + str(product.unit), usable, "PriceSnap", 6.5))
+    pdf.drawRightString(width - pad, baseline, unit)
 
     pdf.setStrokeColor(colors.HexColor("#94A3B8"))
-    pdf.line(pad, 11.5 * mm, width - pad, 11.5 * mm)
-    pdf.setFont("PriceSnap", 6)
-    barcode = fit_text("ШК: " + str(product.barcode), usable, "PriceSnap", 6)
-    pdf.drawCentredString(width / 2, 7.5 * mm, barcode)
-    pdf.drawCentredString(width / 2, 3.5 * mm, print_date.strftime("%d.%m.%Y"))
+    pdf.line(pad, 7.5 * mm, width - pad, 7.5 * mm)
+    pdf.setFont("PriceSnap", 5.5)
+    date = print_date.strftime("%d.%m.%Y")
+    date_width = pdfmetrics.stringWidth(date, "PriceSnap", 5.5)
+    barcode = fit_text("ШК: " + str(product.barcode), usable - date_width - 5, "PriceSnap", 5.5)
+    pdf.drawString(pad, 4 * mm, barcode)
+    pdf.drawRightString(width - pad, 4 * mm, date)
 
 
 def draw_label(pdf, product, company_name, width, height, thermal, promo, print_date):
@@ -183,7 +187,7 @@ def draw_label(pdf, product, company_name, width, height, thermal, promo, print_
 def generate_pdf(path, items, template, company_name="PriceSnap"):
     register_font()
     thermal = template == "thermo_58x40"
-    page_size = (40 * mm, 58 * mm) if thermal else A4
+    page_size = (58 * mm, 40 * mm) if thermal else A4
     pdf = canvas.Canvas(str(path), pagesize=page_size)
     cell_w = page_size[0] if thermal else page_size[0] / 3
     cell_h = page_size[1] if thermal else page_size[1] / 4
