@@ -12,3 +12,4 @@ agent/PriceAgentDebug.spec
 *.db
 *.sqlite
 *.sqlite3
+backend/releases/PriceAgent_previous.exe

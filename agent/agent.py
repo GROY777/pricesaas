@@ -91,7 +91,7 @@ class App(ctk.CTk):
             data = json.loads(CONFIG.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = {}
-        self.url = ctk.StringVar(value=data.get("url", "https://yourdomain.ru"))
+        self.url = ctk.StringVar(value=data.get("url", "https://cardifyrbx.shop"))
         self.key = ctk.StringVar(value=data.get("key", ""))
         self.path = ctk.StringVar(value=data.get("path", ""))
         self.printer = ctk.StringVar(value=data.get("printer", ""))
