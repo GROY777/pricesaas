@@ -72,11 +72,15 @@ def draw_thermal_label(pdf, product, company_name, width, height, print_date):
     pdf.line(pad, line_y, width - pad, line_y)
 
     name_size = 8
+    lines = wrap(product.name, usable, name_size, 3)
+    while name_size > 6 and lines and lines[-1].endswith("…"):
+        name_size -= .5
+        lines = wrap(product.name, usable, name_size, 3)
     pdf.setFont("PriceSnapBold", name_size)
     y = line_y - 12
-    for line in wrap(product.name, usable, name_size, 2):
+    for line in lines:
         pdf.drawCentredString(width / 2, y, line)
-        y -= 10
+        y -= name_size + 1
 
     old = getattr(product, "old_price", None)
     if old is not None and Decimal(old) > Decimal(product.price):

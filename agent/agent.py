@@ -22,6 +22,7 @@ import win32print
 from PIL import Image, ImageDraw
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+from print_adaptation import prepare_pdf, printer_geometry
 
 CONFIG = Path(os.environ["APPDATA"]) / "PriceAgent" / "config.json"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -209,11 +210,17 @@ class App(ctk.CTk):
                     with tempfile.TemporaryDirectory() as directory:
                         path = Path(directory) / "label.pdf"
                         path.write_bytes(response.content)
+                        try:
+                            geometry = printer_geometry(self.printer.get())
+                        except Exception:
+                            geometry = None
+                        print_path, is_thermal = prepare_pdf(path, Path(directory) / "adapted.pdf", geometry)
                         bundled = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "SumatraPDF.exe"
                         if bundled.is_file():
-                            subprocess.run([str(bundled), "-print-to", self.printer.get(), "-print-settings", "noscale", "-silent", str(path)], check=True, timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
+                            settings = "shrink" if is_thermal else "noscale"
+                            subprocess.run([str(bundled), "-print-to", self.printer.get(), "-print-settings", settings, "-silent", str(print_path)], check=True, timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
                         else:
-                            win32api.ShellExecute(0, "printto", str(path), f'"{self.printer.get()}"', ".", 0)
+                            win32api.ShellExecute(0, "printto", str(print_path), f'"{self.printer.get()}"', ".", 0)
                             time.sleep(5)
                     ack = self.http.post(self.endpoint(f'/api/agent/jobs/{job["id"]}/ack'), headers=job_headers, timeout=(8, 25))
                     ack.raise_for_status()
