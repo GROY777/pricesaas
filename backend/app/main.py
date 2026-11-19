@@ -5,7 +5,8 @@ from fastapi import FastAPI
 from sqlalchemy import text
 from .database import Base, engine
 from . import models
-from .routers import auth, agent, scanner, billing, admin
+from .models import PriceTemplate, TenantTemplate
+from .routers import auth, agent, scanner, billing, admin, templates
 from .config import get_settings
 from .bot import run_bot
 from .moysklad import sync_loop
@@ -26,6 +27,18 @@ async def lifespan(app: FastAPI):
         await connection.execute(text("ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS lock_token VARCHAR(64)"))
         await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS free_prints_bonus INTEGER NOT NULL DEFAULT 0"))
         await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"))
+        await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registered_ip VARCHAR(64)"))
+        defaults = [
+            ("classic-a4", "Классика Retail A4", "Универсальный шаблон", "a4", 0),
+            ("promo-a4", "Яркая Акция / Скидка", "Акцентный шаблон для акций", "a4", 0),
+            ("boutique-a4", "Бутик и Косметика Минимал", "Минималистичный дизайн", "a4", 290),
+            ("farmer-a4", "Фермерская Лавка / Крафт", "Тёплый стиль для фермерских товаров", "a4", 390),
+            ("premium-thermal", "Термо Премиум 58×40", "Премиальный термошаблон", "thermo", 490),
+            ("promo-thermal", "Термо Акция 58×40", "Термошаблон для акций", "thermo", 290),
+        ]
+        for slug, name, description, format_type, price in defaults:
+            await connection.execute(text("INSERT INTO price_templates (slug,name,description,format_type,price_rub,preview_css_config,is_active) VALUES (:slug,:name,:description,:format,:price,'{}',true) ON CONFLICT (slug) DO NOTHING"), {"slug":slug,"name":name,"description":description,"format":format_type,"price":price})
+        await connection.execute(text("INSERT INTO tenant_templates (tenant_id,template_id,source) SELECT t.id,p.id,'free' FROM tenants t CROSS JOIN price_templates p WHERE p.price_rub=0 ON CONFLICT DO NOTHING"))
     task = asyncio.create_task(run_bot()) if get_settings().bot_token else None
     sync_task = asyncio.create_task(sync_loop())
     try:
@@ -47,3 +60,4 @@ app.include_router(agent.router)
 app.include_router(scanner.router)
 app.include_router(billing.router)
 app.include_router(admin.router)
+app.include_router(templates.router)

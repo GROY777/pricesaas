@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from .config import get_settings
 from .database import get_db
-from .models import Tenant, User
+from .models import Tenant, User, UsedFreeDevice
 
 password_hasher = PasswordHash.recommended()
 bearer = HTTPBearer(auto_error=False)
@@ -56,12 +56,21 @@ async def get_current_admin(credentials: HTTPAuthorizationCredentials | None = D
     return tenant
 
 
-async def api_tenant(x_api_key: str = Header(), db: AsyncSession = Depends(get_db)) -> Tenant:
+async def api_tenant(x_api_key: str = Header(), x_device_hwid: str | None = Header(default=None), db: AsyncSession = Depends(get_db)) -> Tenant:
     tenant = await db.scalar(select(Tenant).where(Tenant.api_key == x_api_key))
     if tenant is None:
         raise HTTPException(status_code=401, detail="Неверный API-ключ")
     if not tenant.is_active:
         raise HTTPException(status_code=403, detail="Store blocked")
+    if x_device_hwid and tenant.plan == "free":
+        used = await db.get(UsedFreeDevice, x_device_hwid[:255])
+        if used is None:
+            db.add(UsedFreeDevice(hwid=x_device_hwid[:255], first_tenant_id=tenant.id))
+            await db.commit()
+        elif used.first_tenant_id != tenant.id:
+            tenant.free_prints_used = max(tenant.free_prints_used, 30)
+            await db.commit()
+            raise HTTPException(status_code=402, detail="Бесплатный пробный лимит уже был использован на этом компьютере. Оформите подписку PRO")
     return tenant
 
 

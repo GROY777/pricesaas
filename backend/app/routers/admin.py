@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
-from ..models import Payment, PrintJob, Product, Tenant
+from ..models import Payment, PrintJob, Product, Tenant, PriceTemplate, TenantTemplate
 from ..security import get_current_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(get_current_admin)])
@@ -70,3 +70,17 @@ async def toggle_block(tenant_id: int, data: BlockUpdate | None = None, db: Asyn
     tenant.is_active = data.is_active if data else not tenant.is_active
     await db.commit()
     return {"is_active": tenant.is_active}
+
+@router.get("/tenants/{tenant_id}/templates")
+async def tenant_templates(tenant_id: int, db: AsyncSession = Depends(get_db)):
+    owned = {x for x in (await db.scalars(select(TenantTemplate.template_id).where(TenantTemplate.tenant_id == tenant_id))).all()}
+    rows = (await db.scalars(select(PriceTemplate).where(PriceTemplate.is_active.is_(True), PriceTemplate.price_rub > 0))).all()
+    return [{"id": x.id, "name": x.name, "price_rub": x.price_rub, "is_owned": x.id in owned} for x in rows]
+
+@router.post("/tenants/{tenant_id}/templates/{template_id}")
+async def grant_template(tenant_id: int, template_id: int, db: AsyncSession = Depends(get_db)):
+    if await db.get(Tenant, tenant_id) is None or await db.get(PriceTemplate, template_id) is None: raise HTTPException(404, "Не найдено")
+    row = await db.scalar(select(TenantTemplate).where(TenantTemplate.tenant_id == tenant_id, TenantTemplate.template_id == template_id))
+    if row: await db.delete(row)
+    else: db.add(TenantTemplate(tenant_id=tenant_id, template_id=template_id, source="admin"))
+    await db.commit(); return {"owned": not bool(row)}

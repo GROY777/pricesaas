@@ -27,6 +27,19 @@ from print_adaptation import prepare_pdf, printer_geometry
 CONFIG = Path(os.environ["APPDATA"]) / "PriceAgent" / "config.json"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
+def device_hwid():
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as key:
+            value, _ = winreg.QueryValueEx(key, "MachineGuid")
+            return str(value)
+    except (OSError, TypeError):
+        try:
+            output = subprocess.check_output(["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_ComputerSystemProduct).UUID"], text=True, timeout=5)
+            return output.strip()
+        except Exception:
+            return "unknown-" + os.environ.get("COMPUTERNAME", "device")
+
+
 
 def read_products(path):
     path = Path(path)
@@ -106,6 +119,7 @@ class App(ctk.CTk):
         self.path = ctk.StringVar(value=data.get("path", ""))
         self.printer = ctk.StringVar(value=data.get("printer", ""))
         self.autostart = ctk.BooleanVar(value=data.get("autostart", False))
+        self.hwid = device_hwid()
         self.status = ctk.StringVar(value="Готово")
         for label, variable in [("Адрес сервера", self.url), ("API-ключ магазина", self.key), ("Файл выгрузки", self.path)]:
             ctk.CTkLabel(self, text=label).pack(anchor="w", padx=20)
@@ -132,7 +146,7 @@ class App(ctk.CTk):
         self.after(0, lambda: self.status.set(text))
 
     def headers(self):
-        return {"X-API-Key": self.key.get().strip()}
+        return {"X-API-Key": self.key.get().strip(), "X-Device-HWID": self.hwid}
 
     def endpoint(self, path):
         return self.url.get().strip().rstrip("/") + path

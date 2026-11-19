@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 import secrets
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, func, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from .database import Base
 
@@ -22,6 +22,7 @@ class Tenant(Base):
     is_active: Mapped[bool] = mapped_column(default=True, index=True)
     template_type: Mapped[str] = mapped_column(String(32), default="a4_3x4")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    registered_ip: Mapped[str | None] = mapped_column(String(64), index=True)
 
 
 class User(Base):
@@ -68,3 +69,30 @@ class Payment(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     status: Mapped[str] = mapped_column(String(16), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UsedFreeDevice(Base):
+    __tablename__ = "used_free_devices"
+    hwid: Mapped[str] = mapped_column(String(255), primary_key=True)
+    first_tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PriceTemplate(Base):
+    __tablename__ = "price_templates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text, default="")
+    format_type: Mapped[str] = mapped_column(String(16), default="a4")
+    price_rub: Mapped[int] = mapped_column(Integer, default=0)
+    preview_css_config: Mapped[str] = mapped_column(Text, default="{}")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class TenantTemplate(Base):
+    __tablename__ = "tenant_templates"
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), primary_key=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey("price_templates.id"), primary_key=True)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    source: Mapped[str] = mapped_column(String(16), default="free")

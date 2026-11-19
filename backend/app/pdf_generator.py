@@ -190,7 +190,8 @@ def draw_label(pdf, product, company_name, width, height, thermal, promo, print_
 
 def generate_pdf(path, items, template, company_name="PriceSnap"):
     register_font()
-    thermal = template == "thermo_58x40"
+    thermal = template == "thermo_58x40" or str(template).startswith("premium-thermal") or str(template).startswith("promo-thermal")
+    promo = template == "a4_promo" or str(template).startswith("promo-")
     page_size = (58 * mm, 40 * mm) if thermal else A4
     pdf = canvas.Canvas(str(path), pagesize=page_size)
     cell_w = page_size[0] if thermal else page_size[0] / 3
@@ -209,7 +210,7 @@ def generate_pdf(path, items, template, company_name="PriceSnap"):
                 pdf.setDash(2, 2)
                 pdf.rect(0, 0, cell_w, cell_h)
                 pdf.setDash()
-            draw_label(pdf, product, company_name, cell_w, cell_h, thermal, template == "a4_promo", print_date)
+            draw_label(pdf, product, company_name, cell_w, cell_h, thermal, promo, print_date)
             pdf.restoreState()
             count += 1
     pdf.save()

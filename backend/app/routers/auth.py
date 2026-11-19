@@ -1,7 +1,7 @@
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timezone, timedelta
 from pathlib import Path
 import secrets
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -18,10 +18,20 @@ router = APIRouter(prefix="/api", tags=["auth"])
 
 
 @router.post("/auth/register", response_model=TokenResponse, status_code=201)
-async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(data: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
     if not data.accepted_terms:
         raise HTTPException(422, "Примите Пользовательское соглашение и Политику конфиденциальности")
-    tenant = Tenant(email=str(data.email).lower(), password_hash=password_hasher.hash(data.password), company_name=data.company_name.strip(), api_key=new_api_key())
+    # Limit free-account farming from one address while retaining paid signup access.
+    request_ip = request.client.host if request.client else None
+    if request_ip:
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
+        recent = await db.scalar(select(func.count(Tenant.id)).where(Tenant.registered_ip == request_ip, Tenant.created_at >= since)) or 0
+        exhausted = await db.scalar(select(func.count(Tenant.id)).where(Tenant.registered_ip == request_ip, Tenant.free_prints_used >= 30, Tenant.plan == "free")) or 0
+        if recent >= 2:
+            raise HTTPException(429, "С этого IP уже создано максимальное число бесплатных аккаунтов за 24 часа")
+    tenant = Tenant(email=str(data.email).lower(), password_hash=password_hasher.hash(data.password), company_name=data.company_name.strip(), api_key=new_api_key(), registered_ip=request_ip)
+    if request_ip and exhausted:
+        tenant.free_prints_used = 30
     if not tenant.company_name:
         raise HTTPException(422, "Укажите название компании")
     db.add(tenant)
