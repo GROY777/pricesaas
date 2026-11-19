@@ -1,10 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('SumatraPDF.exe', '.')]
+datas = [('SumatraPDF.exe', '.'), ('ui.html', '.')]
 binaries = []
 hiddenimports = []
-tmp_ret = collect_all('customtkinter')
+tmp_ret = collect_all('webview')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('numpy')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]

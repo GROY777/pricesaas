@@ -7,7 +7,7 @@
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-pyinstaller --noconfirm --clean --onefile --noconsole --name PriceAgent --collect-all customtkinter --collect-all numpy --add-data "SumatraPDF.exe;." agent.py
+pyinstaller --noconfirm --clean PriceAgent.spec
 ```
 
 3. Для прямого скачивания скопируйте `dist\PriceAgent.exe` в `backend\releases\PriceAgent_Setup.exe`. Это исполняемая программа без мастера установки.
