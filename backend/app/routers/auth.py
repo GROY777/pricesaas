@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import get_settings
 from ..database import get_db
-from ..models import PrintJob, Tenant
+from ..models import PrintJob, Tenant, PriceTemplate, TenantTemplate
 from ..schemas import LoginRequest, RegisterRequest, SettingsRequest, TokenResponse
 from ..security import create_token, current_tenant, new_api_key, password_hasher
 from ..moysklad import sync_moysklad
@@ -22,7 +22,8 @@ async def register(data: RegisterRequest, request: Request, db: AsyncSession = D
     if not data.accepted_terms:
         raise HTTPException(422, "Примите Пользовательское соглашение и Политику конфиденциальности")
     # Limit free-account farming from one address while retaining paid signup access.
-    request_ip = request.client.host if request.client else None
+    # Nginx overwrites X-Real-IP and X-Forwarded-For; backend is not published externally.
+    request_ip = request.headers.get("x-real-ip") or (request.client.host if request.client else None)
     if request_ip:
         since = datetime.now(timezone.utc) - timedelta(hours=24)
         recent = await db.scalar(select(func.count(Tenant.id)).where(Tenant.registered_ip == request_ip, Tenant.created_at >= since)) or 0
@@ -41,6 +42,9 @@ async def register(data: RegisterRequest, request: Request, db: AsyncSession = D
         await db.rollback()
         raise HTTPException(409, "Этот email уже зарегистрирован")
     await db.refresh(tenant)
+    for template in (await db.scalars(select(PriceTemplate).where(PriceTemplate.price_rub == 0, PriceTemplate.is_active.is_(True), ~PriceTemplate.slug.startswith("custom-")))).all():
+        db.add(TenantTemplate(tenant_id=tenant.id, template_id=template.id, source="free"))
+    await db.commit()
     return TokenResponse(access_token=create_token(tenant.id))
 
 
@@ -69,6 +73,9 @@ async def settings(data: SettingsRequest, tenant: Tenant = Depends(current_tenan
             raise HTTPException(422, "Укажите название магазина")
         tenant.company_name = company_name
     if data.template_type is not None:
+        owned = await db.scalar(select(PriceTemplate.id).join(TenantTemplate, TenantTemplate.template_id == PriceTemplate.id).where(TenantTemplate.tenant_id == tenant.id, PriceTemplate.slug == data.template_type, PriceTemplate.is_active.is_(True)))
+        if owned is None and data.template_type not in ("a4_3x4", "a4_promo", "thermo_58x40"):
+            raise HTTPException(403, "Шаблон недоступен этому магазину")
         tenant.template_type = data.template_type
     if data.regenerate_api_key:
         tenant.api_key = new_api_key()

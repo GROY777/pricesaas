@@ -1,3 +1,5 @@
+import json
+import re
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -188,10 +190,37 @@ def draw_label(pdf, product, company_name, width, height, thermal, promo, print_
     pdf.drawRightString(width - pad, 4 * mm, date_text)
 
 
-def generate_pdf(path, items, template, company_name="PriceSnap"):
+def draw_configured_label(pdf, product, company_name, width, height, config, print_date):
+    def colour(key, default):
+        value = config.get(key, default)
+        return colors.HexColor(value if isinstance(value, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", value) else default)
+    pad = 3 * mm
+    pdf.setFillColor(colour("background", "#ffffff")); pdf.rect(0, 0, width, height, fill=1, stroke=0)
+    if config.get("border", "solid") != "none":
+        pdf.setStrokeColor(colour("accent", "#2563eb")); pdf.setLineWidth(1)
+        if config.get("border") == "dashed": pdf.setDash(3, 2)
+        pdf.rect(1, 1, width-2, height-2, fill=0, stroke=1); pdf.setDash()
+    if config.get("show_company", True):
+        pdf.setFillColor(colour("header", "#1e293b")); pdf.rect(0, height-8*mm, width, 8*mm, fill=1, stroke=0)
+        pdf.setFillColor(colors.white); pdf.setFont("PriceSnapBold", 7)
+        pdf.drawCentredString(width/2, height-5.3*mm, fit_text(company_name, width-2*pad, "PriceSnapBold", 7))
+    pdf.setFillColor(colour("accent", "#2563eb")); pdf.setFont("PriceSnapBold", 9)
+    y = height-12*mm
+    for line in wrap(product.name, width-2*pad, 9, 2): pdf.drawString(pad, y, line); y -= 11
+    if config.get("show_old_price", True) and product.old_price is not None and product.old_price > product.price:
+        pdf.setFont("PriceSnap", 7); old = str(product.old_price); pdf.drawRightString(width-pad, 18*mm, old); pdf.line(width-pad-pdfmetrics.stringWidth(old, "PriceSnap", 7), 18*mm+2, width-pad, 18*mm+2)
+    pdf.setFillColor(colour("price", "#0f172a")); pdf.setFont("PriceSnapBold", 20); pdf.drawString(pad, 10*mm, str(product.price))
+    if config.get("show_unit", True): pdf.setFont("PriceSnap", 6); pdf.drawRightString(width-pad, 10*mm, str(product.unit))
+    pdf.setFont("PriceSnap", 6)
+    if config.get("show_barcode", True): pdf.drawString(pad, 4*mm, fit_text(str(product.barcode), width*.55, "PriceSnap", 6))
+    if config.get("show_date", True): pdf.drawRightString(width-pad, 4*mm, print_date.strftime("%d.%m.%Y"))
+
+
+def generate_pdf(path, items, template, company_name="PriceSnap", config=None, format_type=None):
     register_font()
-    thermal = template == "thermo_58x40" or str(template).startswith("premium-thermal") or str(template).startswith("promo-thermal")
+    thermal = format_type == "thermo" or template == "thermo_58x40" or str(template).startswith("premium-thermal") or str(template).startswith("promo-thermal")
     promo = template == "a4_promo" or str(template).startswith("promo-")
+    parsed_config = json.loads(config) if isinstance(config, str) and config else config
     page_size = (58 * mm, 40 * mm) if thermal else A4
     pdf = canvas.Canvas(str(path), pagesize=page_size)
     cell_w = page_size[0] if thermal else page_size[0] / 3
@@ -210,7 +239,10 @@ def generate_pdf(path, items, template, company_name="PriceSnap"):
                 pdf.setDash(2, 2)
                 pdf.rect(0, 0, cell_w, cell_h)
                 pdf.setDash()
-            draw_label(pdf, product, company_name, cell_w, cell_h, thermal, promo, print_date)
+            if parsed_config is not None:
+                draw_configured_label(pdf, product, company_name, cell_w, cell_h, parsed_config, print_date)
+            else:
+                draw_label(pdf, product, company_name, cell_w, cell_h, thermal, promo, print_date)
             pdf.restoreState()
             count += 1
     pdf.save()

@@ -38,7 +38,11 @@ async def lifespan(app: FastAPI):
         ]
         for slug, name, description, format_type, price in defaults:
             await connection.execute(text("INSERT INTO price_templates (slug,name,description,format_type,price_rub,preview_css_config,is_active) VALUES (:slug,:name,:description,:format,:price,'{}',true) ON CONFLICT (slug) DO NOTHING"), {"slug":slug,"name":name,"description":description,"format":format_type,"price":price})
-        await connection.execute(text("INSERT INTO tenant_templates (tenant_id,template_id,source) SELECT t.id,p.id,'free' FROM tenants t CROSS JOIN price_templates p WHERE p.price_rub=0 ON CONFLICT DO NOTHING"))
+        await connection.execute(text("CREATE TABLE IF NOT EXISTS schema_markers (name VARCHAR(128) PRIMARY KEY)"))
+        marker = await connection.execute(text("INSERT INTO schema_markers(name) VALUES ('free_templates_v1') ON CONFLICT DO NOTHING RETURNING name"))
+        if marker.scalar():
+            await connection.execute(text("INSERT INTO tenant_templates (tenant_id,template_id,source) SELECT t.id,p.id,'free' FROM tenants t CROSS JOIN price_templates p WHERE p.price_rub=0 AND p.slug NOT LIKE 'custom-%' ON CONFLICT DO NOTHING"))
+
     task = asyncio.create_task(run_bot()) if get_settings().bot_token else None
     sync_task = asyncio.create_task(sync_loop())
     try:

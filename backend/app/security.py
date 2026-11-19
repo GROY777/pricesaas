@@ -11,6 +11,7 @@ from fastapi import Depends, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pwdlib import PasswordHash
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from .config import get_settings
 from .database import get_db
@@ -62,15 +63,18 @@ async def api_tenant(x_api_key: str = Header(), x_device_hwid: str | None = Head
         raise HTTPException(status_code=401, detail="Неверный API-ключ")
     if not tenant.is_active:
         raise HTTPException(status_code=403, detail="Store blocked")
-    if x_device_hwid and tenant.plan == "free":
-        used = await db.get(UsedFreeDevice, x_device_hwid[:255])
-        if used is None:
-            db.add(UsedFreeDevice(hwid=x_device_hwid[:255], first_tenant_id=tenant.id))
-            await db.commit()
-        elif used.first_tenant_id != tenant.id:
+    active_pro = tenant.plan == "pro" and tenant.subscription_until and tenant.subscription_until > datetime.now(timezone.utc)
+    if x_device_hwid and not active_pro:
+        hwid = x_device_hwid.strip().lower()
+        if not hwid or len(hwid) > 255:
+            raise HTTPException(status_code=422, detail="Invalid device identifier")
+        await db.execute(insert(UsedFreeDevice).values(hwid=hwid, first_tenant_id=tenant.id).on_conflict_do_nothing(index_elements=[UsedFreeDevice.hwid]))
+        used = await db.get(UsedFreeDevice, hwid)
+        if used.first_tenant_id != tenant.id:
             tenant.free_prints_used = max(tenant.free_prints_used, 30)
             await db.commit()
             raise HTTPException(status_code=402, detail="Бесплатный пробный лимит уже был использован на этом компьютере. Оформите подписку PRO")
+        await db.commit()
     return tenant
 
 

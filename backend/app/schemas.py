@@ -24,7 +24,7 @@ class TokenResponse(BaseModel):
 
 
 class SettingsRequest(BaseModel):
-    template_type: Template | None = None
+    template_type: str | None = Field(default=None, min_length=1, max_length=64)
     regenerate_api_key: bool = False
     regenerate_invite_token: bool = False
     moysklad_token: str | None = Field(default=None, max_length=1024)

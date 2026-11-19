@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
-from ..models import PrintJob, Product, Tenant, User
+from ..models import PrintJob, Product, Tenant, User, PriceTemplate, TenantTemplate
 from ..pdf_generator import generate_pdf
 from ..schemas import PrintItem, ProductResponse
 from ..security import telegram_user
@@ -42,7 +42,10 @@ async def print_labels(items: list[PrintItem], user: User = Depends(telegram_use
     filename = f"{uuid4().hex}.pdf"
     path = JOBS_DIR / filename
     try:
-        generate_pdf(path, [(by_barcode[code], quantity) for code, quantity in quantities.items()], tenant.template_type, company_name=tenant.company_name)
+        template = await db.scalar(select(PriceTemplate).join(TenantTemplate, TenantTemplate.template_id == PriceTemplate.id).where(TenantTemplate.tenant_id == tenant.id, PriceTemplate.slug == tenant.template_type, PriceTemplate.is_active.is_(True)))
+        if tenant.template_type not in ("a4_3x4", "a4_promo", "thermo_58x40") and template is None:
+            raise HTTPException(403, "Шаблон недоступен")
+        generate_pdf(path, [(by_barcode[code], quantity) for code, quantity in quantities.items()], tenant.template_type, company_name=tenant.company_name, config=template.preview_css_config if template else None, format_type=template.format_type if template else None)
         if not active:
             tenant.free_prints_used += total
         job = PrintJob(tenant_id=tenant.id, created_by_tg_id=user.telegram_id, items_count=total, pdf_filename=filename)
