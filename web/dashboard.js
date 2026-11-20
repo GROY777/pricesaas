@@ -60,6 +60,27 @@ async function pay(productType, templateId) {
   try { const data = await (await api('/api/payments/create', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({product_type:productType, ...(templateId ? {template_id:templateId} : {})})})).json(); location.href = data.confirmation_url; }
   catch (error) { setText('message', error.message); }
 }
+const proPrices = {pro_1m: '990', pro_3m: '2 490', pro_12m: '7 990'};
+let selectedProPlan = 'pro_1m';
+const proPeriods = byId('proPeriods');
+const payPro = byId('payPro');
+if (proPeriods && payPro) {
+  proPeriods.addEventListener('click', event => {
+    const selected = event.target.closest('button[data-plan]');
+    if (!selected || !proPeriods.contains(selected) || !Object.hasOwn(proPrices, selected.dataset.plan)) return;
+    selectedProPlan = selected.dataset.plan;
+    proPeriods.querySelectorAll('button[data-plan]').forEach(button => {
+      const active = button === selected;
+      button.setAttribute('aria-pressed', String(active));
+      button.classList.toggle('border-blue-600', active);
+      button.classList.toggle('bg-blue-50', active);
+      button.classList.toggle('border-slate-200', !active);
+      button.classList.toggle('bg-white', !active);
+    });
+    payPro.textContent = `Оплатить ${proPrices[selectedProPlan]} ₽`;
+  });
+  payPro.addEventListener('click', () => pay(selectedProPlan));
+}
 const returnedFromPayment = new URLSearchParams(location.search).get('payment') === 'success';
 if (returnedFromPayment) {
   setText('message', 'Вы вернулись со страницы оплаты. Подтверждаем платёж; статус обновится после обработки.');
