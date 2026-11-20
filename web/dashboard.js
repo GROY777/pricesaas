@@ -60,11 +60,25 @@ async function pay(productType, templateId) {
   try { const data = await (await api('/api/payments/create', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({product_type:productType, ...(templateId ? {template_id:templateId} : {})})})).json(); location.href = data.confirmation_url; }
   catch (error) { setText('message', error.message); }
 }
-if (new URLSearchParams(location.search).get('payment') === 'success') {
+const returnedFromPayment = new URLSearchParams(location.search).get('payment') === 'success';
+if (returnedFromPayment) {
   setText('message', 'Вы вернулись со страницы оплаты. Подтверждаем платёж; статус обновится после обработки.');
   history.replaceState(null, '', location.pathname);
-  setTimeout(() => { load(); }, 3000);
 }
+async function reconcilePayments() {
+  try {
+    const result = await (await api('/api/payments/sync', {method:'POST'})).json();
+    await load();
+    if (result.succeeded) setText('message', 'Оплата подтверждена, доступ обновлён.');
+    const rows = await (await api('/api/payments/history')).json();
+    if (rows.some(p => p.status === 'pending' && Date.now() - new Date(p.created_at).getTime() < 86400000)) {
+      setTimeout(reconcilePayments, 20000);
+    }
+  } catch (error) {
+    if (returnedFromPayment) setText('message', error.message);
+  }
+}
+if (token) reconcilePayments();
 async function download() {
   try {
     const blob = await (await api('/api/download/agent')).blob();

@@ -51,9 +51,13 @@ async def lifespan(app: FastAPI):
 
     task = asyncio.create_task(run_bot()) if get_settings().bot_token else None
     sync_task = asyncio.create_task(sync_loop())
+    payment_task = asyncio.create_task(payments.sync_loop())
     try:
         yield
     finally:
+        payment_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await payment_task
         sync_task.cancel()
         with suppress(asyncio.CancelledError):
             await sync_task

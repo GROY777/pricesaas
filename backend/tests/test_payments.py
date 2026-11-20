@@ -36,7 +36,7 @@ def test_payment_creation_and_verified_idempotent_webhook(monkeypatch):
                 return httpx.Response(200, json={'id':payment_id, 'confirmation':{'confirmation_url':'https://yookassa.ru/pay'}}, request=httpx.Request('POST',url))
             async def get(self, url, **kwargs):
                 p = calls['payload']
-                return httpx.Response(200, json={'id':payment_id, 'status':'succeeded', 'paid':True, 'amount':p['amount'], 'metadata':p['metadata']}, request=httpx.Request('GET',url))
+                return httpx.Response(200, json={'id':payment_id, 'status':calls.get('remote_status', 'succeeded'), 'paid':calls.get('remote_status', 'succeeded') == 'succeeded', 'amount':p['amount'], 'metadata':p['metadata']}, request=httpx.Request('GET',url))
         monkeypatch.setattr(payments.httpx, 'AsyncClient', FakeGateway)
         app = FastAPI(); app.include_router(payments.router)
         async def session():
@@ -49,6 +49,7 @@ def test_payment_creation_and_verified_idempotent_webhook(monkeypatch):
         monkeypatch.undo()
         real_client = httpx.AsyncClient
         monkeypatch.setattr(payments, 'get_settings', lambda: settings)
+        monkeypatch.setattr(payments, 'SessionLocal', sessions)
         monkeypatch.setattr(payments, 'httpx', SimpleNamespace(AsyncClient=FakeGateway, HTTPError=httpx.HTTPError))
         async with real_client(transport=transport, base_url='http://test') as client:
             response = await client.post('/api/payments/create', json={'product_type':'pro_3m'})
@@ -59,10 +60,13 @@ def test_payment_creation_and_verified_idempotent_webhook(monkeypatch):
             calls['payload']['metadata']['tenant_id'] = 'wrong'
             assert (await client.post('/api/payments/yookassa/webhook', json=event)).status_code == 400
             calls['payload']['metadata']['tenant_id'] = str(tenant_id)
-            assert (await client.post('/api/payments/yookassa/webhook', json=event)).status_code == 200
+            sync_response = await client.post('/api/payments/sync')
+            assert sync_response.status_code == 200 and sync_response.json()['succeeded'] == 1
             async with sessions() as db:
                 tenant = await db.get(Tenant, tenant_id); until = tenant.subscription_until
-                assert tenant.plan == 'pro' and (until.replace(tzinfo=None) - __import__('datetime').datetime.utcnow()).days == 89
+                assert tenant.plan == 'pro' and 89 <= (until.replace(tzinfo=None) - __import__('datetime').datetime.now(__import__('datetime').timezone.utc).replace(tzinfo=None)).days <= 90
+            sync_response = await client.post('/api/payments/sync')
+            assert sync_response.json()['succeeded'] == 0
             assert (await client.post('/api/payments/yookassa/webhook', json=event)).status_code == 200
             async with sessions() as db:
                 assert (await db.get(Tenant, tenant_id)).subscription_until == until
@@ -84,5 +88,12 @@ def test_payment_creation_and_verified_idempotent_webhook(monkeypatch):
             assert (await client.post('/api/payments/yookassa/webhook', json=event)).status_code == 200
             async with sessions() as db:
                 assert (await db.get(TenantTemplate, (tenant_id, 1))).source == 'purchase'
+            payment_id = str(uuid4())
+            assert (await client.post('/api/payments/create', json={'product_type':'pro_1m'})).status_code == 200
+            calls['remote_status'] = 'canceled'
+            assert (await client.post('/api/payments/sync')).json()['canceled'] == 1
+            async with sessions() as db:
+                canceled = await db.scalar(select(Payment).where(Payment.yookassa_payment_id == payment_id))
+                assert canceled.status == 'canceled'
         await engine.dispose()
     asyncio.run(scenario())

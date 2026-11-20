@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Literal
@@ -11,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import get_settings
-from ..database import get_db
+from ..database import get_db, SessionLocal
 from ..models import Payment, Tenant, TenantTemplate, PriceTemplate, User
 from ..security import current_tenant
 
@@ -80,18 +81,33 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
             remote = response.json()
     except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
         raise HTTPException(400, 'Не удалось проверить платёж')
+    result = await apply_remote(payment_id, remote, db)
+    if result == 'pending':
+        raise HTTPException(400, 'Платёж ещё не подтверждён')
+    return {'ok':True}
+
+async def apply_remote(payment_id: str, remote: dict, db: AsyncSession):
     payment = await db.scalar(select(Payment).where(Payment.yookassa_payment_id == payment_id).with_for_update())
     if not payment:
         raise HTTPException(404, 'Платёж не найден')
     if payment.status == 'succeeded':
-        return {'ok':True}
+        return 'already_processed'
+    if payment.status != 'pending':
+        return 'already_processed'
     meta = remote.get('metadata') or {}
     try:
-        valid = remote.get('id') == payment_id and remote.get('status') == 'succeeded' and remote.get('paid') is True and Decimal(remote['amount']['value']) == payment.amount and remote['amount']['currency'] == payment.currency and meta.get('tenant_id') == str(payment.tenant_id) and meta.get('product_type') == payment.product_type and (meta.get('template_id') or '') == (str(payment.target_id) if payment.target_id else '')
+        legacy = payment.product_type == 'pro_1m' and payment.amount == Decimal('1490.00') and not meta.get('product_type')
+        valid = remote.get('id') == payment_id and Decimal(remote['amount']['value']) == payment.amount and remote['amount']['currency'] == payment.currency and meta.get('tenant_id') == str(payment.tenant_id) and (legacy or (meta.get('product_type') == payment.product_type and (meta.get('template_id') or '') == (str(payment.target_id) if payment.target_id else '')))
     except (KeyError, TypeError, ValueError, InvalidOperation):
         valid = False
-    if not valid or payment.status != 'pending':
+    if not valid:
         raise HTTPException(400, 'Данные платежа не совпадают')
+    if remote.get('status') == 'canceled':
+        payment.status = 'canceled'
+        await db.commit()
+        return 'canceled'
+    if remote.get('status') != 'succeeded' or remote.get('paid') is not True:
+        return 'pending'
     tenant = await db.scalar(select(Tenant).where(Tenant.id == payment.tenant_id).with_for_update())
     now = datetime.now(timezone.utc)
     if payment.product_type in PLANS:
@@ -117,7 +133,57 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
             log.warning('Could not notify owner of payment', exc_info=True)
         finally:
             await bot.session.close()
-    return {'ok':True}
+    return 'succeeded'
+
+async def fetch_remote(client, payment_id, auth):
+    try:
+        payment_id = str(UUID(payment_id))
+        response = await client.get(f'{API}/{payment_id}', auth=auth)
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError('invalid response')
+        return data
+    except (httpx.HTTPError, ValueError, TypeError) as exc:
+        raise HTTPException(502, 'Не удалось проверить платёж') from exc
+
+async def sync_pending(tenant_id=None):
+    auth = credentials()
+    async with SessionLocal() as db:
+        query = select(Payment.yookassa_payment_id).where(Payment.status == 'pending', Payment.created_at >= datetime.now(timezone.utc) - timedelta(hours=24)).order_by(Payment.id)
+        if tenant_id is not None:
+            query = query.where(Payment.tenant_id == tenant_id)
+        ids = (await db.scalars(query)).all()
+    counts = {'checked': 0, 'succeeded': 0, 'canceled': 0, 'errors': 0}
+    async with httpx.AsyncClient(timeout=20) as client:
+        limit = asyncio.Semaphore(8)
+        async def check(payment_id):
+            async with limit:
+                try:
+                    remote = await fetch_remote(client, payment_id, auth)
+                    async with SessionLocal() as db:
+                        result = await apply_remote(payment_id, remote, db)
+                    counts['checked'] += 1
+                    if result in ('succeeded', 'canceled'):
+                        counts[result] += 1
+                except Exception:
+                    counts['errors'] += 1
+                    log.warning('Unable to reconcile payment %s', payment_id, exc_info=True)
+        await asyncio.gather(*(check(payment_id) for payment_id in ids))
+    return counts
+
+@router.post('/sync')
+async def sync(tenant: Tenant = Depends(current_tenant)):
+    return await sync_pending(tenant.id)
+
+async def sync_loop():
+    while True:
+        await asyncio.sleep(20)
+        try:
+            if get_settings().yookassa_shop_id and get_settings().yookassa_secret_key:
+                await sync_pending()
+        except Exception:
+            log.exception('Payment reconciliation failed')
 
 @router.get('/history')
 async def history(tenant: Tenant = Depends(current_tenant), db: AsyncSession = Depends(get_db)):
