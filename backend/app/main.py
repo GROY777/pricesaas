@@ -3,6 +3,8 @@ import json
 import secrets
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from pathlib import Path
 from sqlalchemy import text
 from .database import Base, engine
 from . import models
@@ -58,6 +60,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PriceSnap", lifespan=lifespan)
+
+@app.get("/releases/PriceAgent_Setup.exe", include_in_schema=False)
+async def public_agent_release():
+    return FileResponse(Path("/app/releases/PriceAgent_Setup.exe"), filename="PriceAgent_Setup.exe", media_type="application/octet-stream")
+
 app.include_router(auth.router)
 app.include_router(agent.router)
 app.include_router(employees.router)

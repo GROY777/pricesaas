@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24
     telegram_max_age_seconds: int = 86400
     admin_email: str = ""
+    agent_version: str = "2.1.0"
 
     @property
     def admin_emails(self) -> set[str]:

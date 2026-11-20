@@ -1,4 +1,5 @@
 import json
+import base64
 import os
 import subprocess
 import sys
@@ -14,14 +15,41 @@ import win32api
 import win32clipboard
 import win32con
 import win32print
+import win32crypt
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from print_adaptation import prepare_pdf, printer_geometry
+from version import AGENT_VERSION
+from packaging.version import Version, InvalidVersion
 
 CONFIG = Path(os.environ.get('PRICEAGENT_CONFIG', str(Path(os.environ['APPDATA']) / 'PriceAgent' / 'config.json')))
 RUN_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
+UPDATE_URL = 'https://cardifyrbx.shop/releases/PriceAgent_Setup.exe'
+
+def write_config(config):
+    stored = dict(config)
+    key = stored.pop('key', '')
+    stored['key_dpapi'] = base64.b64encode(win32crypt.CryptProtectData(key.encode('utf-8'), None, None, None, None, 1)).decode('ascii')
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    temp = CONFIG.with_suffix('.tmp')
+    temp.write_text(json.dumps(stored, ensure_ascii=False, indent=2), encoding='utf-8')
+    os.replace(temp, CONFIG)
+
+def read_config():
+    try:
+        data = json.loads(CONFIG.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    if 'key_dpapi' in data:
+        try:
+            data['key'] = win32crypt.CryptUnprotectData(base64.b64decode(data.pop('key_dpapi')), None, None, None, 1)[1].decode('utf-8')
+        except Exception as exc:
+            raise RuntimeError('Не удалось расшифровать ключ магазина для текущего пользователя Windows') from exc
+    elif data.get('key'):
+        write_config(data)
+    return data
 
 
 class Watcher(FileSystemEventHandler):
@@ -36,10 +64,9 @@ class AgentAPI:
     def __init__(self, read_products, hwid):
         self.read_products = read_products
         self.hwid = hwid
-        try: self.config = json.loads(CONFIG.read_text(encoding='utf-8'))
-        except (OSError, ValueError): self.config = {}
+        self.config = read_config()
         for key, value in {'url':'https://cardifyrbx.shop','key':'','path':'','printer':'','autostart':False}.items(): self.config.setdefault(key, value)
-        self.stop = threading.Event(); self.lock = threading.Lock(); self.timer = None; self.observer = None; self._window = None; self.printed = 0
+        self.stop = threading.Event(); self.lock = threading.Lock(); self.timer = None; self.observer = None; self._window = None; self.printed = 0; self.update_info = None
         self.http = requests.Session(); self.http.trust_env = False
         retry = Retry(total=3, connect=3, read=0, backoff_factor=.7, allowed_methods=frozenset({'GET','POST'}))
         self.http.mount('https://', HTTPAdapter(max_retries=retry)); self.http.mount('http://', HTTPAdapter(max_retries=retry))
@@ -50,7 +77,7 @@ class AgentAPI:
             except Exception: pass
     def headers(self): return {'X-API-Key':self.config['key'].strip(), 'X-Device-HWID':self.hwid}
     def endpoint(self, path): return self.config['url'].strip().rstrip('/') + path
-    def initial(self): return {'config':self.config, 'printers':self.printers()}
+    def initial(self): return {'config':self.config, 'printers':self.printers(), 'version': AGENT_VERSION, 'update': self.update_info}
     def printers(self):
         try: return [p[2] for p in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
         except Exception: return []
@@ -69,7 +96,7 @@ class AgentAPI:
         try:
             candidate = {k:config.get(k, self.config[k]) for k in ('url','key','path','printer','autostart')}
             response = self.http.post(candidate['url'].strip().rstrip('/')+'/api/sync', headers={'X-API-Key':candidate['key'].strip(),'X-Device-HWID':self.hwid}, json=[], timeout=(8,20)); response.raise_for_status()
-            CONFIG.parent.mkdir(parents=True,exist_ok=True); CONFIG.write_text(json.dumps(candidate,ensure_ascii=False,indent=2),encoding='utf-8')
+            write_config(candidate)
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER,RUN_KEY) as key:
                 if candidate['autostart']:
                     command = f'"{sys.executable}"' if getattr(sys,'frozen',False) else f'"{sys.executable}" "{Path(sys.argv[0]).resolve()}"'
@@ -121,7 +148,49 @@ class AgentAPI:
                     ack=self.http.post(self.endpoint(f'/api/agent/jobs/{job["id"]}/ack'),headers=headers,timeout=(8,25)); ack.raise_for_status(); self.printed+=job.get('items_count',1); self.emit('printed',count=self.printed); self.emit('log',message=f'Задание {job["id"]} отправлено на принтер',level='success')
             except requests.RequestException as exc: self.emit('connection',online=False); self.emit('log',message=f'Сетевая ошибка: {exc}',level='error')
             except Exception as exc: self.emit('log',message=f'Ошибка печати: {exc}',level='error')
-    def start(self): self.watch(); threading.Thread(target=self.poll,daemon=True).start()
+    def check_update(self):
+        try:
+            response = self.http.get('https://cardifyrbx.shop/api/agent/version', timeout=(8, 20))
+            response.raise_for_status()
+            data = response.json()
+            if data.get('download_url') != UPDATE_URL:
+                raise ValueError('Недопустимый адрес обновления')
+            if Version(data['version']) > Version(AGENT_VERSION):
+                self.update_info = {'version': data['version'], 'notes': str(data.get('release_notes', '')), 'mandatory': bool(data.get('mandatory', False))}
+                self.emit('update', **self.update_info)
+        except (requests.RequestException, ValueError, KeyError, InvalidVersion) as exc:
+            self.emit('log', message=f'Не удалось проверить обновления: {exc}', level='error')
+
+    def install_update(self):
+        if not self.update_info:
+            return {'ok': False, 'error': 'Обновление недоступно'}
+        try:
+            directory = Path(tempfile.mkdtemp(prefix='pricesnap-update-'))
+            path = directory / 'PriceAgent_Setup.exe'
+            with self.http.get(UPDATE_URL, stream=True, timeout=(8, 60), allow_redirects=False) as response:
+                response.raise_for_status()
+                if response.status_code != 200:
+                    raise ValueError('Ошибка загрузки обновления')
+                size = 0
+                with path.open('wb') as file:
+                    for chunk in response.iter_content(1024 * 1024):
+                        size += len(chunk)
+                        if size > 250 * 1024 * 1024:
+                            raise ValueError('Слишком большой файл обновления')
+                        file.write(chunk)
+            with path.open('rb') as installer:
+                valid_header = installer.read(2) == b'MZ'
+            if size < 100000 or not valid_header:
+                raise ValueError('Получен некорректный установщик')
+            subprocess.Popen([str(path), '/SILENT', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS'], close_fds=True)
+            self._window.destroy()
+            return {'ok': True}
+        except Exception as exc:
+            self.emit('log', message=f'Ошибка обновления: {exc}', level='error')
+            return {'ok': False, 'error': str(exc)}
+
+    def start(self):
+        self.watch(); threading.Thread(target=self.poll,daemon=True).start(); threading.Thread(target=self.check_update,daemon=True).start()
     def shutdown(self):
         self.stop.set()
         if self.timer: self.timer.cancel()

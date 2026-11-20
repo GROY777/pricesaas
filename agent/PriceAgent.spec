@@ -8,6 +8,7 @@ tmp_ret = collect_all('webview')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('numpy')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+datas = [item for item in datas if not item[0].endswith(('.py', '.pyi', '.pyc'))]
 
 
 a = Analysis(
@@ -21,17 +22,17 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
-    optimize=0,
+    optimize=1,
 )
 pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='PriceAgent',
+    icon='pricesnap.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -45,3 +46,4 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=True, name='PriceAgent')

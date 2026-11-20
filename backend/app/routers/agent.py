@@ -11,9 +11,14 @@ from ..models import PrintJob, Product, Tenant
 from ..schemas import ProductInput
 from ..security import api_tenant
 from ..product_sync import price_update_values
+from ..config import get_settings
 
 router = APIRouter(prefix="/api", tags=["agent"])
 JOBS_DIR = Path("/app/media/jobs")
+
+@router.get("/agent/version")
+async def agent_version():
+    return {"version": get_settings().agent_version, "download_url": "https://cardifyrbx.shop/releases/PriceAgent_Setup.exe", "release_notes": "Новый интерфейс, автообновление и улучшенная стабильность печати", "mandatory": False}
 
 
 @router.post("/sync")
