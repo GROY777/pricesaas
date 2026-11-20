@@ -83,8 +83,12 @@ class Payment(Base):
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
     yookassa_payment_id: Mapped[str] = mapped_column(String(128), unique=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    currency: Mapped[str] = mapped_column(String(3), default="RUB", server_default="RUB")
+    product_type: Mapped[str] = mapped_column(String(16), default="pro_1m", server_default="pro_1m")
+    target_id: Mapped[int | None] = mapped_column(ForeignKey("price_templates.id"))
     status: Mapped[str] = mapped_column(String(16), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class UsedFreeDevice(Base):

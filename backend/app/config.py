@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     webapp_url: str = "https://yourdomain.ru"
     yookassa_shop_id: str = ""
     yookassa_secret_key: str = ""
+    yookassa_return_url: str = "https://cardifyrbx.shop/dashboard.html?payment=success"
+    yookassa_vat_code: int = 0
     jwt_expire_minutes: int = 60 * 24
     telegram_max_age_seconds: int = 86400
     admin_email: str = ""

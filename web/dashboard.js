@@ -56,9 +56,14 @@ async function copyValue(id) {
   try { await navigator.clipboard.writeText(el.value); }
   catch (error) { setText('message', 'Не удалось скопировать значение'); }
 }
-async function pay() {
-  try { const data = await (await api('/api/billing/create-payment', {method:'POST'})).json(); location.href = data.confirmation_url; }
+async function pay(productType, templateId) {
+  try { const data = await (await api('/api/payments/create', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({product_type:productType, ...(templateId ? {template_id:templateId} : {})})})).json(); location.href = data.confirmation_url; }
   catch (error) { setText('message', error.message); }
+}
+if (new URLSearchParams(location.search).get('payment') === 'success') {
+  setText('message', 'Вы вернулись со страницы оплаты. Подтверждаем платёж; статус обновится после обработки.');
+  history.replaceState(null, '', location.pathname);
+  setTimeout(() => { load(); }, 3000);
 }
 async function download() {
   try {

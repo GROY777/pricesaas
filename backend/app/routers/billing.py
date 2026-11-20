@@ -22,19 +22,8 @@ def credentials():
 
 @router.post("/create-payment")
 async def create_payment(tenant: Tenant = Depends(current_tenant), db: AsyncSession = Depends(get_db)):
-    auth = credentials()
-    payload = {"amount": {"value": "1490.00", "currency": "RUB"}, "capture": True, "confirmation": {"type": "redirect", "return_url": get_settings().webapp_url.rstrip("/") + "/dashboard.html?payment=success"}, "description": "PriceSnap: подписка на 30 дней", "metadata": {"tenant_id": str(tenant.id)}}
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.post(API, auth=auth, headers={"Idempotence-Key": str(uuid4())}, json=payload)
-            response.raise_for_status()
-            data = response.json()
-        payment = Payment(tenant_id=tenant.id, yookassa_payment_id=data["id"], amount=1490, status="pending")
-        db.add(payment)
-        await db.commit()
-        return {"confirmation_url": data["confirmation"]["confirmation_url"]}
-    except (httpx.HTTPError, KeyError, ValueError):
-        raise HTTPException(502, "Не удалось создать платёж")
+    from .payments import create, Purchase
+    return await create(Purchase(product_type='pro_1m'), tenant, db)
 
 
 @router.post("/webhook")
@@ -44,6 +33,9 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
         payload = await request.json()
         if payload.get("event") != "payment.succeeded":
             return {"ok": True}
+        if (payload.get("object", {}).get("metadata") or {}).get("product_type"):
+            from .payments import webhook as new_webhook
+            return await new_webhook(request, db)
         payment_id = payload["object"]["id"]
         if not isinstance(payment_id, str) or len(payment_id) > 128 or "/" in payment_id:
             raise ValueError("invalid payment id")
@@ -56,7 +48,7 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
     payment = await db.scalar(select(Payment).where(Payment.yookassa_payment_id == payment_id).with_for_update())
     if payment is None:
         raise HTTPException(404, "Платёж не найден")
-    if remote.get("status") != "succeeded" or remote.get("amount", {}).get("value") != "1490.00" or remote.get("amount", {}).get("currency") != "RUB" or remote.get("metadata", {}).get("tenant_id") != str(payment.tenant_id):
+    if remote.get("status") != "succeeded" or remote.get("paid") is not True or remote.get("amount", {}).get("value") != "1490.00" or remote.get("amount", {}).get("currency") != "RUB" or remote.get("metadata", {}).get("tenant_id") != str(payment.tenant_id):
         raise HTTPException(400, "Данные платежа не совпадают")
     if payment.status != "succeeded":
         tenant = await db.scalar(select(Tenant).where(Tenant.id == payment.tenant_id).with_for_update())
