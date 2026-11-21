@@ -1,7 +1,7 @@
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import secrets
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, File, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select, or_
 from sqlalchemy.dialects.postgresql import insert
@@ -9,8 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
 from ..models import PrintJob, Product, Tenant
 from ..schemas import ProductInput
-from ..security import api_tenant
+from ..security import api_tenant, current_tenant
 from ..product_sync import price_update_values
+from ..price_import import parse_products
 from ..config import get_settings
 
 router = APIRouter(prefix="/api", tags=["agent"])
@@ -19,6 +20,26 @@ JOBS_DIR = Path("/app/media/jobs")
 @router.get("/agent/version")
 async def agent_version():
     return {"version": get_settings().agent_version, "download_url": "https://cardifyrbx.shop/releases/PriceAgent_Setup.exe", "release_notes": "Новый интерфейс, автообновление и улучшенная стабильность печати", "mandatory": False}
+
+@router.post('/products/preview-columns')
+async def preview_columns(file: UploadFile = File(...), tenant: Tenant = Depends(current_tenant)):
+    suffix = Path(file.filename or '').suffix.lower()
+    if suffix not in {'.xlsx', '.xls', '.csv'}:
+        raise HTTPException(415, 'Поддерживаются XLSX, XLS и CSV')
+    try:
+        return parse_products(await file.read(), file.filename, tenant.column_mapping, preview=True)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(422, str(exc))
+
+@router.get('/products/sample-excel')
+async def sample_excel(tenant: Tenant = Depends(current_tenant)):
+    import io
+    from fastapi.responses import StreamingResponse
+    import openpyxl
+    book = openpyxl.Workbook(); sheet = book.active; sheet.append(['Артикул','Наименование','Цена','Старая цена','Штрихкод','Ед. изм.'])
+    for row in [('A-001','Молоко фермерское',129.90,159.90,'460000000001','шт.'),('A-002','Хлеб',79.00,'','460000000002','шт.'),('A-003','Яблоки',199.50,229.00,'460000000003','кг.'),('A-004','Сыр',549.00,599.00,'460000000004','шт.'),('A-005','Чай',299.00,'','460000000005','уп.')]: sheet.append(row)
+    output = io.BytesIO(); book.save(output); output.seek(0)
+    return StreamingResponse(output, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=PriceSnap_Example.xlsx'})
 
 
 @router.post("/sync")

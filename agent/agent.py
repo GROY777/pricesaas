@@ -40,44 +40,8 @@ def device_hwid():
 
 
 def read_products(path):
-    path = Path(path)
-    if path.suffix.lower() == ".csv":
-        raw = path.read_bytes()
-        try:
-            text = raw.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            text = raw.decode("cp1251")
-        from io import StringIO
-        try:
-            delimiter = csv.Sniffer().sniff(text[:8192], delimiters=";,").delimiter
-        except csv.Error:
-            delimiter = ";"
-        frame = pd.read_csv(StringIO(text), sep=delimiter, dtype=str, keep_default_na=False)
-    else:
-        frame = pd.read_excel(path, dtype=str, keep_default_na=False)
-    columns = {str(c).strip().lower(): c for c in frame.columns}
-    def find(names, required=True):
-        for name in names:
-            for key, original in columns.items():
-                if name in key:
-                    return original
-        if required:
-            raise ValueError("Не найден столбец: " + "/".join(names))
-        return None
-    barcode = find(["штрихкод", "штрих код", "barcode"])
-    name = find(["наименование", "товар", "name"])
-    price = find(["цена", "price"])
-    unit = find(["единица", "ед.", "unit"], False)
-    result = []
-    for _, row in frame.iterrows():
-        code = str(row[barcode]).strip()
-        if not code or not str(row[name]).strip():
-            continue
-        value = re.sub(r"[^\d,.\-]", "", str(row[price])).replace(",", ".")
-        if not value:
-            raise ValueError(f"Не указана цена товара {code}")
-        result.append({"barcode": code, "name": str(row[name]).strip(), "price": value, "unit": str(row[unit]).strip() or "шт." if unit else "шт."})
-    return result
+    from price_import import parse_products
+    return parse_products(path, Path(path).name)
 
 
 if __name__ == "__main__":

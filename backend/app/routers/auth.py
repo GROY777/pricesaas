@@ -72,6 +72,8 @@ async def settings(data: SettingsRequest, tenant: Tenant = Depends(current_tenan
         if not company_name:
             raise HTTPException(422, "Укажите название магазина")
         tenant.company_name = company_name
+    if data.column_mapping is not None:
+        tenant.column_mapping = data.column_mapping
     if data.template_type is not None:
         owned = await db.scalar(select(PriceTemplate.id).join(TenantTemplate, TenantTemplate.template_id == PriceTemplate.id).where(TenantTemplate.tenant_id == tenant.id, PriceTemplate.slug == data.template_type, PriceTemplate.is_active.is_(True)))
         if owned is None and data.template_type not in ("a4_3x4", "a4_promo", "thermo_58x40"):

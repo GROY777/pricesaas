@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 import secrets
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, func, Text, Boolean
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, func, Text, Boolean, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from .database import Base
 
@@ -23,6 +23,7 @@ class Tenant(Base):
     template_type: Mapped[str] = mapped_column(String(32), default="a4_3x4")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     registered_ip: Mapped[str | None] = mapped_column(String(64), index=True)
+    column_mapping: Mapped[dict | None] = mapped_column(JSON)
 
 
 class User(Base):
