@@ -19,7 +19,7 @@ JOBS_DIR = Path("/app/media/jobs")
 
 @router.get("/agent/version")
 async def agent_version():
-    return {"version": get_settings().agent_version, "download_url": "https://cardifyrbx.shop/releases/PriceAgent_Setup.exe", "release_notes": "Новый интерфейс, автообновление и улучшенная стабильность печати", "mandatory": False}
+    return {"version": get_settings().agent_version, "download_url": "https://cardifyrbx.shop/releases/PriceAgent_Setup.exe", "release_notes": 'Умное автоопределение колонок для выгрузок 1С, МойСклад и Excel', "mandatory": False}
 
 @router.post('/products/preview-columns')
 async def preview_columns(file: UploadFile = File(...), tenant: Tenant = Depends(current_tenant)):
