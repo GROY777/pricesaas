@@ -13,8 +13,8 @@ def test_public_agent_version():
     response = TestClient(app).get('/api/agent/version')
     assert response.status_code == 200
     assert response.json() == {
-        'version': '2.1.1',
+        'version': '2.1.2',
         'download_url': 'https://cardifyrbx.shop/releases/PriceAgent_Setup.exe',
-        'release_notes': 'Умное автоопределение колонок для выгрузок 1С, МойСклад и Excel',
+        'release_notes': 'Печать ценников на А4 в натуральном масштабе',
         'mandatory': False,
     }

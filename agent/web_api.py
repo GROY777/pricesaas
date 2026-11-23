@@ -144,7 +144,8 @@ class AgentAPI:
                         except Exception: geometry=None
                         output,thermal=prepare_pdf(path,Path(d)/'adapted.pdf',geometry); exe=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'SumatraPDF.exe'
                         if exe.is_file(): subprocess.run([str(exe),'-print-to',self.config['printer'],'-print-settings','shrink' if thermal else 'noscale','-silent',str(output)],check=True,timeout=60,creationflags=subprocess.CREATE_NO_WINDOW)
-                        else: win32api.ShellExecute(0,'printto',str(output),f'"{self.config["printer"]}"','.',0); time.sleep(5)
+                        elif thermal: win32api.ShellExecute(0,'printto',str(output),f'"{self.config["printer"]}"','.',0); time.sleep(5)
+                        else: raise RuntimeError('SumatraPDF не найден: печать А4 без изменения масштаба недоступна')
                     ack=self.http.post(self.endpoint(f'/api/agent/jobs/{job["id"]}/ack'),headers=headers,timeout=(8,25)); ack.raise_for_status(); self.printed+=job.get('items_count',1); self.emit('printed',count=self.printed); self.emit('log',message=f'Задание {job["id"]} отправлено на принтер',level='success')
             except requests.RequestException as exc: self.emit('connection',online=False); self.emit('log',message=f'Сетевая ошибка: {exc}',level='error')
             except Exception as exc: self.emit('log',message=f'Ошибка печати: {exc}',level='error')

@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
         await connection.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS price_changed_at TIMESTAMPTZ"))
         await connection.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS needs_reprint BOOLEAN NOT NULL DEFAULT FALSE"))
         await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS column_mapping JSONB"))
+        await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS label_settings JSONB"))
         await connection.execute(text("ALTER TABLE payments ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'RUB'"))
         await connection.execute(text("ALTER TABLE payments ADD COLUMN IF NOT EXISTS product_type VARCHAR(16) NOT NULL DEFAULT 'pro_1m'"))
         await connection.execute(text("ALTER TABLE payments ADD COLUMN IF NOT EXISTS target_id INTEGER REFERENCES price_templates(id)"))

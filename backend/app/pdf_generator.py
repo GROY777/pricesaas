@@ -239,33 +239,43 @@ def draw_configured_label(pdf, product, company_name, width, height, config, pri
     if config.get("show_date", True): pdf.drawRightString(width - pad, 4 * mm, print_date.strftime("%d.%m.%Y"))
 
 
-def generate_pdf(path, items, template, company_name="PriceSnap", config=None, format_type=None):
+def generate_pdf(path, items, template, company_name="PriceSnap", config=None, format_type=None, label_settings=None):
     register_font()
     thermal = format_type == "thermo" or template == "thermo_58x40" or str(template).startswith("premium-thermal") or str(template).startswith("promo-thermal")
     promo = template == "a4_promo" or str(template).startswith("promo-")
     parsed_config = json.loads(config) if isinstance(config, str) and config else config
     page_size = (58 * mm, 40 * mm) if thermal else A4
     pdf = canvas.Canvas(str(path), pagesize=page_size)
-    cell_w = page_size[0] if thermal else page_size[0] / 3
-    cell_h = page_size[1] if thermal else page_size[1] / 4
+    settings = label_settings or {}
+    cell_w = page_size[0] if thermal else max(30, min(190, float(settings.get('width', 60)))) * mm
+    cell_h = page_size[1] if thermal else max(25, min(277, float(settings.get('height', 50)))) * mm
+    cols = 1 if thermal else int((page_size[0] - 10 * mm) // cell_w)
+    rows = 1 if thermal else int((page_size[1] - 10 * mm) // cell_h)
+    per_page = cols * rows
     count = 0
     print_date = datetime.now()
     for product, quantity in items:
         for _ in range(quantity):
-            if count and (thermal or count % 12 == 0):
+            if count and count % per_page == 0:
                 pdf.showPage()
-            slot = 0 if thermal else count % 12
+            slot = count % per_page
             pdf.saveState()
-            pdf.translate((slot % 3) * cell_w, page_size[1] - (slot // 3 + 1) * cell_h)
+            pdf.translate((0 if thermal else 5 * mm) + (slot % cols) * cell_w, page_size[1] - (0 if thermal else 5 * mm) - (slot // cols + 1) * cell_h)
             if not thermal:
+                pdf.saveState()
+                pdf.scale(cell_w / (60 * mm), cell_h / (50 * mm))
+            draw_w, draw_h = (cell_w, cell_h) if thermal else (60 * mm, 50 * mm)
+            if parsed_config is not None:
+                draw_configured_label(pdf, product, company_name, draw_w, draw_h, parsed_config, print_date)
+            else:
+                draw_label(pdf, product, company_name, draw_w, draw_h, thermal, promo, print_date)
+            if not thermal:
+                pdf.restoreState()
                 pdf.setStrokeColor(colors.HexColor("#94A3B8"))
+                pdf.setLineWidth(.35)
                 pdf.setDash(2, 2)
                 pdf.rect(0, 0, cell_w, cell_h)
                 pdf.setDash()
-            if parsed_config is not None:
-                draw_configured_label(pdf, product, company_name, cell_w, cell_h, parsed_config, print_date)
-            else:
-                draw_label(pdf, product, company_name, cell_w, cell_h, thermal, promo, print_date)
             pdf.restoreState()
             count += 1
     pdf.save()

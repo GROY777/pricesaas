@@ -52,7 +52,7 @@ async def print_changed(identity=Depends(principal), db: AsyncSession = Depends(
     path = JOBS_DIR / f"{uuid4().hex}.pdf"
     try:
         labels = [(SimpleNamespace(name=p.name, barcode=p.barcode, price=p.price, old_price=p.old_price if p.old_price is not None else p.previous_price, unit=p.unit), 1) for p in items]
-        generate_pdf(path, labels, tenant.template_type, company_name=tenant.company_name, config=template.preview_css_config if template else None, format_type=template.format_type if template else None)
+        generate_pdf(path, labels, tenant.template_type, company_name=tenant.company_name, config=template.preview_css_config if template else None, format_type=template.format_type if template else None, label_settings=tenant.label_settings)
         if not active:
             tenant.free_prints_used += total
         for product in items:

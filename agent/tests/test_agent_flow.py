@@ -34,3 +34,20 @@ def test_failed_print_does_not_ack(monkeypatch):
     assert api.printed == 0
     assert api.http.get.call_args_list[0].kwargs["headers"]["X-Device-HWID"] == "machine"
     api.shutdown()
+
+
+def test_a4_print_uses_noscale(monkeypatch):
+    api = web_api.AgentAPI(lambda _: [], "machine")
+    api.config.update(key="key", printer="printer")
+    api.stop.wait = Mock(side_effect=[False, True])
+    jobs = Mock(); jobs.json.return_value = [{"id": 7, "lock_token": "token", "file_url": "/file"}]
+    pdf = Mock(); pdf.content = b"pdf"
+    api.http.get = Mock(side_effect=[jobs, pdf]); api.http.post = Mock()
+    monkeypatch.setattr(web_api, 'printer_geometry', lambda _: (210, 297))
+    monkeypatch.setattr(web_api, 'prepare_pdf', lambda path, output, geometry: (path, False))
+    monkeypatch.setattr(web_api.subprocess, 'run', Mock())
+    api.poll()
+    args = web_api.subprocess.run.call_args.args[0]
+    assert args[args.index('-print-settings') + 1] == 'noscale'
+    api.http.post.assert_called_once()
+    api.shutdown()

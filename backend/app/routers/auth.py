@@ -62,7 +62,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def me(tenant: Tenant = Depends(current_tenant), db: AsyncSession = Depends(get_db)):
     start = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
     printed = await db.scalar(select(func.coalesce(func.sum(PrintJob.items_count), 0)).where(PrintJob.tenant_id == tenant.id, PrintJob.status == "printed", PrintJob.created_at >= start))
-    return {"id": tenant.id, "email": tenant.email, "company_name": tenant.company_name, "api_key": tenant.api_key, "plan": tenant.plan, "subscription_until": tenant.subscription_until, "free_prints_used": tenant.free_prints_used, "free_prints_bonus": tenant.free_prints_bonus, "template_type": tenant.template_type, "printed_today": printed, "moysklad_configured": bool(tenant.moysklad_token), "deep_link": f"https://t.me/{get_settings().bot_username}?start={tenant.invite_token}"}
+    return {"id": tenant.id, "email": tenant.email, "company_name": tenant.company_name, "api_key": tenant.api_key, "plan": tenant.plan, "subscription_until": tenant.subscription_until, "free_prints_used": tenant.free_prints_used, "free_prints_bonus": tenant.free_prints_bonus, "template_type": tenant.template_type, "label_settings": tenant.label_settings, "printed_today": printed, "moysklad_configured": bool(tenant.moysklad_token), "deep_link": f"https://t.me/{get_settings().bot_username}?start={tenant.invite_token}"}
 
 
 @router.patch("/me/settings")
@@ -74,6 +74,26 @@ async def settings(data: SettingsRequest, tenant: Tenant = Depends(current_tenan
         tenant.company_name = company_name
     if data.column_mapping is not None:
         tenant.column_mapping = data.column_mapping
+    if data.label_settings is not None:
+        from pydantic import BaseModel, Field, ValidationError
+        class LabelSize(BaseModel):
+            width: float = Field(ge=30, le=190, allow_inf_nan=False)
+            height: float = Field(ge=25, le=277, allow_inf_nan=False)
+        try:
+            size = LabelSize.model_validate(data.label_settings)
+            presets = data.label_settings.get('presets', [])
+            if not isinstance(presets, list) or len(presets) > 20:
+                raise ValueError('Invalid presets')
+            saved = []
+            for preset in presets:
+                item = LabelSize.model_validate(preset)
+                name = str(preset.get('name', '')).strip()
+                if not name or len(name) > 60:
+                    raise ValueError('Invalid preset name')
+                saved.append({'name': name, **item.model_dump()})
+            tenant.label_settings = {**size.model_dump(), 'presets': saved}
+        except (ValidationError, ValueError, TypeError, AttributeError):
+            raise HTTPException(422, 'Некорректные размеры ценника или пресеты')
     if data.template_type is not None:
         owned = await db.scalar(select(PriceTemplate.id).join(TenantTemplate, TenantTemplate.template_id == PriceTemplate.id).where(TenantTemplate.tenant_id == tenant.id, PriceTemplate.slug == data.template_type, PriceTemplate.is_active.is_(True)))
         if owned is None and data.template_type not in ("a4_3x4", "a4_promo", "thermo_58x40"):

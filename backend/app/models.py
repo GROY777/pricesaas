@@ -24,6 +24,7 @@ class Tenant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     registered_ip: Mapped[str | None] = mapped_column(String(64), index=True)
     column_mapping: Mapped[dict | None] = mapped_column(JSON)
+    label_settings: Mapped[dict | None] = mapped_column(JSON)
 
 
 class User(Base):

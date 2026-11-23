@@ -41,10 +41,20 @@ class TelegramTests(unittest.TestCase):
 
 
 class PdfTests(unittest.TestCase):
+    def test_custom_a4_grid(self):
+        product = SimpleNamespace(name="Test", price=Decimal("125.50"), old_price=None, barcode="123456789", unit="pcs")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'custom.pdf'
+            generate_pdf(path, [(product, 7)], 'a4_3x4', label_settings={'width': 100, 'height': 80})
+            pages = PdfReader(path).pages
+            self.assertEqual(len(pages), 2)
+            self.assertAlmostEqual(float(pages[0].mediabox.width), 210 * 72 / 25.4, places=1)
+            self.assertAlmostEqual(float(pages[0].mediabox.height), 297 * 72 / 25.4, places=1)
+
     def test_quantities_page_sizes_and_cyrillic(self):
         product = SimpleNamespace(name="Молоко", price=Decimal("125.50"), old_price=Decimal("150.00"), barcode="123456789", unit="шт.")
         with tempfile.TemporaryDirectory() as directory:
-            for template, quantity, expected_pages in [("a4_3x4", 13, 2), ("a4_promo", 1, 1), ("thermo_58x40", 3, 3)]:
+            for template, quantity, expected_pages in [("a4_3x4", 16, 2), ("a4_promo", 1, 1), ("thermo_58x40", 3, 3)]:
                 path = Path(directory) / (template + ".pdf")
                 generate_pdf(path, [(product, quantity)], template)
                 pages = PdfReader(path).pages
