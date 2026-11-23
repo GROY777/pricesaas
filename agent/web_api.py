@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import winreg
+import uuid
 from pathlib import Path
 
 import requests
@@ -124,8 +125,12 @@ class AgentAPI:
         self.emit('sync',active=True)
         try:
             products=self.read_products(self.config['path'])
+            if not products: raise ValueError('Файл не содержит товаров; синхронизация отменена')
+            session_id=str(uuid.uuid4())
+            start=self.http.post(self.endpoint('/api/agent/sync-sessions'),headers=self.headers(),json={'id':session_id,'expected_items':len(products),'expected_batches':(len(products)+499)//500},timeout=(8,45)); start.raise_for_status(); self.connected(start)
             for i in range(0,len(products),500):
-                r=self.http.post(self.endpoint('/api/sync'),headers=self.headers(),json=products[i:i+500],timeout=(8,45)); r.raise_for_status(); self.connected(r)
+                r=self.http.post(self.endpoint(f'/api/agent/sync-sessions/{session_id}/batch'),headers=self.headers(),json={'index':i//500,'items':products[i:i+500]},timeout=(8,45)); r.raise_for_status(); self.connected(r)
+            r=self.http.post(self.endpoint(f'/api/agent/sync-sessions/{session_id}/finish'),headers=self.headers(),timeout=(8,120)); r.raise_for_status(); self.connected(r)
             self.emit('log',message=f'Синхронизировано товаров: {len(products)}',level='success'); return {'ok':True,'count':len(products)}
         except Exception as exc:
             if isinstance(exc,requests.RequestException): self.emit('connection',online=False)

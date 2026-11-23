@@ -10,7 +10,7 @@ import web_api
 def test_csv_cp1251_and_hwid(tmp_path, monkeypatch):
     path = tmp_path / "products.csv"
     path.write_bytes("barcode;name;price\n123;milk;12,50\n".encode("cp1251"))
-    assert agent.read_products(path) == [{"barcode": "123", "name": "milk", "price": "12.50", "unit": "\u0448\u0442."}]
+    assert agent.read_products(path) == [{"article": "123", "barcode": "123", "name": "milk", "price": "12.50", "unit": "\u0448\u0442."}]
     api = web_api.AgentAPI(agent.read_products, "test-machine")
     api.config.update(key="key", path=str(path))
     response = Mock(); response.json.return_value = {}

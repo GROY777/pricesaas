@@ -25,6 +25,7 @@ class Tenant(Base):
     registered_ip: Mapped[str | None] = mapped_column(String(64), index=True)
     column_mapping: Mapped[dict | None] = mapped_column(JSON)
     label_settings: Mapped[dict | None] = mapped_column(JSON)
+    replace_missing_products: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 class User(Base):
@@ -52,10 +53,11 @@ class TenantEmployee(Base):
 
 class Product(Base):
     __tablename__ = "products"
-    __table_args__ = (UniqueConstraint("tenant_id", "barcode"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "barcode"), UniqueConstraint("tenant_id", "article"))
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
-    barcode: Mapped[str] = mapped_column(String(128), index=True)
+    barcode: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    article: Mapped[str | None] = mapped_column(String(128), nullable=True)
     name: Mapped[str] = mapped_column(String(255))
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     old_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
@@ -64,6 +66,32 @@ class Product(Base):
     needs_reprint: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     unit: Mapped[str] = mapped_column(String(32), default="шт.")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ProductSyncSession(Base):
+    __tablename__ = 'product_sync_sessions'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey('tenants.id'), index=True)
+    expected_batches: Mapped[int] = mapped_column(Integer)
+    expected_items: Mapped[int] = mapped_column(Integer)
+    received_batches: Mapped[int] = mapped_column(Integer, default=0)
+    received_items: Mapped[int] = mapped_column(Integer, default=0)
+    replace: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(16), default='pending')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProductSyncItem(Base):
+    __tablename__ = 'product_sync_items'
+    __table_args__ = (UniqueConstraint('session_id', 'article'),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey('product_sync_sessions.id', ondelete='CASCADE'), index=True)
+    article: Mapped[str] = mapped_column(String(128))
+    barcode: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    name: Mapped[str] = mapped_column(String(255))
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    old_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    unit: Mapped[str] = mapped_column(String(32))
 
 
 class PrintJob(Base):

@@ -9,7 +9,7 @@ from sqlalchemy import text
 from .database import Base, engine
 from . import models
 from .models import PriceTemplate, TenantTemplate
-from .routers import auth, agent, scanner, billing, admin, templates, employees, changed_prices, payments
+from .routers import auth, agent, scanner, billing, admin, templates, employees, changed_prices, payments, catalog, sync_sessions
 from .config import get_settings
 from .bot import run_bot
 from .moysklad import sync_loop
@@ -38,6 +38,14 @@ async def lifespan(app: FastAPI):
         await connection.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS needs_reprint BOOLEAN NOT NULL DEFAULT FALSE"))
         await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS column_mapping JSONB"))
         await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS label_settings JSONB"))
+        await connection.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS replace_missing_products BOOLEAN NOT NULL DEFAULT FALSE"))
+        await connection.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS article VARCHAR(128)"))
+        await connection.execute(text("ALTER TABLE products ALTER COLUMN barcode DROP NOT NULL"))
+        await connection.execute(text("CREATE TABLE IF NOT EXISTS schema_markers (name VARCHAR(128) PRIMARY KEY)"))
+        article_migration = await connection.execute(text("INSERT INTO schema_markers(name) VALUES ('product_article_v1') ON CONFLICT DO NOTHING RETURNING name"))
+        if article_migration.scalar():
+            await connection.execute(text("UPDATE products SET article = barcode WHERE article IS NULL AND barcode IS NOT NULL"))
+        await connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_products_tenant_article ON products (tenant_id, article)"))
         await connection.execute(text("ALTER TABLE payments ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'RUB'"))
         await connection.execute(text("ALTER TABLE payments ADD COLUMN IF NOT EXISTS product_type VARCHAR(16) NOT NULL DEFAULT 'pro_1m'"))
         await connection.execute(text("ALTER TABLE payments ADD COLUMN IF NOT EXISTS target_id INTEGER REFERENCES price_templates(id)"))
@@ -71,6 +79,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PriceSnap", lifespan=lifespan)
+app.include_router(catalog.router)
+app.include_router(sync_sessions.router)
 
 @app.get("/releases/PriceAgent_Setup.exe", include_in_schema=False)
 async def public_agent_release():

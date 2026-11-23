@@ -31,6 +31,7 @@ class SettingsRequest(BaseModel):
     company_name: str | None = Field(default=None, min_length=1, max_length=255)
     column_mapping: dict[str, str] | None = None
     label_settings: dict | None = None
+    replace_missing_products: bool | None = None
 
 
 class ProductInput(BaseModel):

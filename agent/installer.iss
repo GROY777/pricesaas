@@ -1,4 +1,4 @@
-#define MyAppVersion "2.1.2"
+#define MyAppVersion "2.1.3"
 [Setup]
 AppId={{6A84D957-B2F0-48AF-BD80-7C9EDACF8971}
 AppName=PriceSnap Agent

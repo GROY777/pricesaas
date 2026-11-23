@@ -41,7 +41,7 @@ def device_hwid():
 
 def read_products(path):
     from price_import import parse_products
-    return parse_products(path, Path(path).name)
+    return parse_products(path, Path(path).name, strict=True)
 
 
 if __name__ == "__main__":

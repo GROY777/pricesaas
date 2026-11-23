@@ -62,7 +62,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def me(tenant: Tenant = Depends(current_tenant), db: AsyncSession = Depends(get_db)):
     start = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
     printed = await db.scalar(select(func.coalesce(func.sum(PrintJob.items_count), 0)).where(PrintJob.tenant_id == tenant.id, PrintJob.status == "printed", PrintJob.created_at >= start))
-    return {"id": tenant.id, "email": tenant.email, "company_name": tenant.company_name, "api_key": tenant.api_key, "plan": tenant.plan, "subscription_until": tenant.subscription_until, "free_prints_used": tenant.free_prints_used, "free_prints_bonus": tenant.free_prints_bonus, "template_type": tenant.template_type, "label_settings": tenant.label_settings, "printed_today": printed, "moysklad_configured": bool(tenant.moysklad_token), "deep_link": f"https://t.me/{get_settings().bot_username}?start={tenant.invite_token}"}
+    return {"id": tenant.id, "email": tenant.email, "company_name": tenant.company_name, "api_key": tenant.api_key, "plan": tenant.plan, "subscription_until": tenant.subscription_until, "free_prints_used": tenant.free_prints_used, "free_prints_bonus": tenant.free_prints_bonus, "template_type": tenant.template_type, "label_settings": tenant.label_settings, "replace_missing_products": tenant.replace_missing_products, "printed_today": printed, "moysklad_configured": bool(tenant.moysklad_token), "deep_link": f"https://t.me/{get_settings().bot_username}?start={tenant.invite_token}"}
 
 
 @router.patch("/me/settings")
@@ -74,6 +74,8 @@ async def settings(data: SettingsRequest, tenant: Tenant = Depends(current_tenan
         tenant.company_name = company_name
     if data.column_mapping is not None:
         tenant.column_mapping = data.column_mapping
+    if data.replace_missing_products is not None:
+        tenant.replace_missing_products = data.replace_missing_products
     if data.label_settings is not None:
         from pydantic import BaseModel, Field, ValidationError
         class LabelSize(BaseModel):

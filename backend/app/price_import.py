@@ -1,4 +1,6 @@
 import re
+import hashlib
+from decimal import Decimal, InvalidOperation
 from io import BytesIO, StringIO
 from pathlib import Path
 import pandas as pd
@@ -28,12 +30,18 @@ def detect_mapping(frame, override=None):
     headers = [str(v).strip() for v in frame.iloc[best_row].tolist()]
     mapping = {}
     for key, terms in SYNONYMS.items():
+        normalized_terms = [clean_header(term) for term in terms]
         for header in headers:
-            normalized = clean_header(header)
-            if any(term == normalized or term in normalized for term in terms): mapping[key] = header; break
+            if clean_header(header) in normalized_terms:
+                mapping[key] = header; break
+        if key not in mapping:
+            for header in headers:
+                normalized = ' ' + clean_header(header) + ' '
+                if any(len(term) >= 4 and ' ' + term + ' ' in normalized for term in normalized_terms):
+                    mapping[key] = header; break
     if override: mapping.update({k:v for k,v in override.items() if v in headers})
     return best_row, headers, mapping
-def parse_products(source, filename='price.csv', override=None, preview=False):
+def parse_products(source, filename='price.csv', override=None, preview=False, strict=False):
     frame = read_table(source, filename); header_row, headers, mapping = detect_mapping(frame, override)
     if preview:
         data = frame.iloc[header_row+1:].copy(); data.columns = headers
@@ -43,11 +51,20 @@ def parse_products(source, filename='price.csv', override=None, preview=False):
     def value(row,key): return str(row.get(mapping.get(key,''),'') or '').strip()
     for _, row in data.iterrows():
         name=value(row,'name')
-        if not name: continue
-        code=value(row,'sku') or value(row,'barcode') or clean_header(name).replace(' ','-')
+        if not name:
+            if strict and any(value(row, key) for key in ('sku', 'barcode', 'price')): raise ValueError(f'Отсутствует наименование в строке {row.name + 1}')
+            continue
+        barcode=value(row,'barcode') or None
+        code=value(row,'sku') or barcode or ('name-' + hashlib.sha256(clean_header(name).encode('utf-8')).hexdigest())
         price=re.sub(r'[^0-9,.-]','',re.sub(r'руб\.?','',value(row,'price'),flags=re.I)).replace(',','.')
-        if not price: continue
-        item={'barcode':code,'name':name,'price':price,'unit':value(row,'unit') or 'шт.'}; old=re.sub(r'[^0-9,.-]','',re.sub(r'руб\.?','',value(row,'old_price'),flags=re.I)).replace(',','.')
+        try:
+            if not price or not Decimal(price).is_finite() or Decimal(price) < 0: raise InvalidOperation
+        except InvalidOperation:
+            if strict: raise ValueError(f'Некорректная цена товара в строке {row.name + 1}')
+            continue
+        item={'article':code,'barcode':barcode,'name':name,'price':price,'unit':value(row,'unit') or 'шт.'}; old=re.sub(r'[^0-9,.-]','',re.sub(r'руб\.?','',value(row,'old_price'),flags=re.I)).replace(',','.')
         if old: item['old_price']=old
         result.append(item)
+    if strict and not result: raise ValueError('В файле нет корректных товаров')
+    if strict and len({item['article'] for item in result}) != len(result): raise ValueError('В файле повторяются артикулы товаров')
     return result

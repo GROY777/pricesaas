@@ -19,7 +19,7 @@ JOBS_DIR = Path("/app/media/jobs")
 
 @router.get("/agent/version")
 async def agent_version():
-    return {"version": get_settings().agent_version, "download_url": "https://cardifyrbx.shop/releases/PriceAgent_Setup.exe", "release_notes": 'Печать ценников на А4 в натуральном масштабе', "mandatory": False}
+    return {"version": get_settings().agent_version, "download_url": "https://cardifyrbx.shop/releases/PriceAgent_Setup.exe", "release_notes": 'Раздельные артикулы и штрихкоды, безопасная синхронизация каталога', "mandatory": False}
 
 @router.post('/products/preview-columns')
 async def preview_columns(file: UploadFile = File(...), tenant: Tenant = Depends(current_tenant)):
@@ -48,7 +48,7 @@ async def sync(items: list[ProductInput], tenant: Tenant = Depends(api_tenant), 
         raise HTTPException(422, "Не более 500 товаров за запрос")
     unique = {item.barcode: item for item in items}
     if unique:
-        rows = [{**item.model_dump(), "tenant_id": tenant.id} for item in unique.values()]
+        rows = [{**item.model_dump(), "article": item.barcode, "tenant_id": tenant.id} for item in unique.values()]
         statement = insert(Product).values(rows)
         values = price_update_values(statement)
         values["old_price"] = statement.excluded.old_price
