@@ -14,10 +14,10 @@ async function run(missingIntegration) {
   };
   const profile = {company_name:'Магазин', plan:'free', api_key:'key', deep_link:'link', printed_today:3, free_prints_used:4, template_type:'a4_3x4', moysklad_configured:true};
   const fetch = async (path, options = {}) => {
-    if (path === '/api/me/settings') lastPatch = JSON.parse(options.body);
-    return {ok:true, json:async () => path === '/api/me' ? profile : {}};
+    if (path === '/api/me/settings') { lastPatch = JSON.parse(options.body); Object.assign(profile, lastPatch); }
+    return {ok:true, json:async () => path === '/api/me' ? profile : path === '/api/payments/history' ? [] : {}};
   };
-  const context = vm.createContext({document, fetch, localStorage:{getItem:()=>'test'}, location:{}, CSS:{escape:x=>x}, console});
+  const context = vm.createContext({document, fetch, URLSearchParams, location:{search:'', pathname:'/dashboard.html'}, CSS:{escape:x=>x}, console});
   vm.runInContext(fs.readFileSync('web/dashboard.js','utf8'), context);
   vm.runInContext(fs.readFileSync('web/company.js','utf8'), context);
   await vm.runInContext('load()', context);

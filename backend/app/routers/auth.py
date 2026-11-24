@@ -1,7 +1,7 @@
 from datetime import datetime, time, timezone, timedelta
 from pathlib import Path
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -15,10 +15,23 @@ from ..moysklad import sync_moysklad
 import httpx
 
 router = APIRouter(prefix="/api", tags=["auth"])
+DUMMY_PASSWORD_HASH = password_hasher.hash(secrets.token_urlsafe(24))
 
 
-@router.post("/auth/register", response_model=TokenResponse, status_code=201)
-async def register(data: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
+def issue_session(response: Response, tenant_id: int):
+    csrf = secrets.token_urlsafe(32)
+    ttl = get_settings().jwt_expire_minutes * 60
+    response.set_cookie('__Host-pricesnap_session', create_token(tenant_id, csrf), max_age=ttl, httponly=True, secure=True, samesite='lax', path='/')
+    response.set_cookie('__Host-pricesnap_csrf', csrf, max_age=ttl, httponly=False, secure=True, samesite='lax', path='/')
+
+def validate_auth_origin(request: Request):
+    origin = request.headers.get('origin')
+    if origin and origin not in {'https://cardifyrbx.shop'}:
+        raise HTTPException(403, 'Недопустимый источник запроса')
+
+@router.post("/auth/register", status_code=201)
+async def register(data: RegisterRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    validate_auth_origin(request)
     if not data.accepted_terms:
         raise HTTPException(422, "Примите Пользовательское соглашение и Политику конфиденциальности")
     # Limit free-account farming from one address while retaining paid signup access.
@@ -45,17 +58,27 @@ async def register(data: RegisterRequest, request: Request, db: AsyncSession = D
     for template in (await db.scalars(select(PriceTemplate).where(PriceTemplate.price_rub == 0, PriceTemplate.is_active.is_(True), ~PriceTemplate.slug.startswith("custom-")))).all():
         db.add(TenantTemplate(tenant_id=tenant.id, template_id=template.id, source="free"))
     await db.commit()
-    return TokenResponse(access_token=create_token(tenant.id))
+    issue_session(response, tenant.id)
+    return {'ok': True}
 
 
-@router.post("/auth/login", response_model=TokenResponse)
-async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
+@router.post("/auth/login")
+async def login(data: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    validate_auth_origin(request)
     tenant = await db.scalar(select(Tenant).where(Tenant.email == str(data.email).lower()))
-    if tenant is None or not password_hasher.verify(data.password, tenant.password_hash):
+    valid_password = password_hasher.verify(data.password, tenant.password_hash if tenant else DUMMY_PASSWORD_HASH)
+    if tenant is None or not valid_password:
         raise HTTPException(401, "Неверный email или пароль")
     if not tenant.is_active:
         raise HTTPException(403, "Store blocked")
-    return TokenResponse(access_token=create_token(tenant.id))
+    issue_session(response, tenant.id)
+    return {'ok': True}
+
+@router.post('/auth/logout')
+async def logout(response: Response, tenant: Tenant = Depends(current_tenant)):
+    response.delete_cookie('__Host-pricesnap_session', path='/', secure=True, httponly=True, samesite='lax')
+    response.delete_cookie('__Host-pricesnap_csrf', path='/', secure=True, samesite='lax')
+    return {'ok': True}
 
 
 @router.get("/me")

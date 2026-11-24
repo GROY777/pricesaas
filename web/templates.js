@@ -1,6 +1,6 @@
 ﻿(() => {
  const el=id=>document.getElementById(id), escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- const api=async(path,options={})=>{const r=await fetch(path,{...options,headers:{Authorization:'Bearer '+localStorage.getItem('token'),'Content-Type':'application/json'}});const data=await r.json();if(!r.ok)throw Error(data.detail||'Ошибка запроса');return data};
+ const api=async(path,options={})=>{const r=await fetch(path,{...options,headers:{'Content-Type':'application/json'}});const data=await r.json();if(!r.ok)throw Error(data.detail||'Ошибка запроса');return data};
  const message=text=>el('templateMessage').textContent=text;
  const config=()=>({header:el('headerColor').value,accent:el('accentColor').value,background:el('backgroundColor').value,price:el('priceColor').value,border:el('borderStyle').value,...Object.fromEntries([...document.querySelectorAll('#elements input')].map(i=>[i.dataset.field,i.checked]))});
  function preview(c={}) {

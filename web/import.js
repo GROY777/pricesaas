@@ -5,7 +5,7 @@
   const importStatus = document.getElementById('importStatus');
   const fields = ['sku', 'name', 'price', 'old_price', 'barcode', 'unit'];
   const showStatus = (message, error = false) => { if (importStatus) { importStatus.textContent = message; importStatus.className = `text-sm mt-2 ${error ? 'text-red-700' : 'text-emerald-700'}`; } };
-  const authFetch = (url, options = {}) => fetch(url, {...options, headers: {...(options.headers || {}), Authorization: `Bearer ${token}`}});
+  const authFetch = (url, options = {}) => fetch(url, {...options, headers: {...(options.headers || {})}});
   if (importFile) importFile.addEventListener('change', async () => {
     const file = importFile.files?.[0]; if (!file) return;
     const form = new FormData(); form.append('file', file); showStatus('Анализируем колонки…');

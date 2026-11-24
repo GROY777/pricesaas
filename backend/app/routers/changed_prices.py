@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,13 +13,13 @@ from .agent import JOBS_DIR
 
 router = APIRouter(prefix="/api", tags=["changed prices"])
 
-async def principal(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), x_telegram_init_data: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
-    if credentials is not None:
-        tenant = await current_tenant(credentials, db)
-        return tenant.id, None
+async def principal(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer), x_telegram_init_data: str | None = Header(default=None), db: AsyncSession = Depends(get_db)):
     if x_telegram_init_data:
         user = await telegram_user(x_telegram_init_data, db)
         return user.tenant_id, user.telegram_id
+    if credentials is not None or request.cookies.get('__Host-pricesnap_session'):
+        tenant = await current_tenant(credentials, db, request)
+        return tenant.id, None
     raise HTTPException(401, "Требуется авторизация")
 
 @router.get("/products/changed-prices")

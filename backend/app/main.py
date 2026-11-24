@@ -4,6 +4,7 @@ import secrets
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from sqlalchemy import text
 from .database import Base, engine
@@ -79,6 +80,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PriceSnap", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=['https://cardifyrbx.shop', 'https://web.telegram.org'], allow_credentials=True, allow_methods=['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'], allow_headers=['Content-Type', 'X-CSRF-Token', 'X-Telegram-Init-Data'])
 app.include_router(catalog.router)
 app.include_router(sync_sessions.router)
 

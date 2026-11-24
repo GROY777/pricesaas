@@ -13,6 +13,7 @@ from ..security import api_tenant, current_tenant
 from ..product_sync import price_update_values
 from ..price_import import parse_products
 from ..config import get_settings
+from ..upload_security import read_price_upload
 
 router = APIRouter(prefix="/api", tags=["agent"])
 JOBS_DIR = Path("/app/media/jobs")
@@ -23,11 +24,8 @@ async def agent_version():
 
 @router.post('/products/preview-columns')
 async def preview_columns(file: UploadFile = File(...), tenant: Tenant = Depends(current_tenant)):
-    suffix = Path(file.filename or '').suffix.lower()
-    if suffix not in {'.xlsx', '.xls', '.csv'}:
-        raise HTTPException(415, 'Поддерживаются XLSX, XLS и CSV')
     try:
-        return parse_products(await file.read(), file.filename, tenant.column_mapping, preview=True)
+        return parse_products(await read_price_upload(file), file.filename, tenant.column_mapping, preview=True)
     except (ValueError, OSError) as exc:
         raise HTTPException(422, str(exc))
 

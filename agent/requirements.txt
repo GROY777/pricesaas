@@ -5,11 +5,11 @@ pandas==2.2.3
 openpyxl==3.1.5
 xlrd==2.0.1
 watchdog==6.0.0
-requests==2.32.3
-urllib3==2.2.3
+requests==2.34.2
+urllib3==2.8.0
 chardet==5.2.0
 pywin32==310
 pystray==0.19.5
-Pillow==11.2.1
+Pillow==13.0.0
 pyinstaller==6.13.0
-pypdf==5.5.0
+pypdf==6.21.4

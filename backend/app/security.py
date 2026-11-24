@@ -1,4 +1,5 @@
 import hashlib
+import base64
 import hmac
 import json
 import secrets
@@ -7,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl
 
 import jwt
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pwdlib import PasswordHash
 from sqlalchemy import select
@@ -25,17 +26,23 @@ def new_api_key() -> str:
     return "ps_live_" + secrets.token_hex(16)
 
 
-def create_token(tenant_id: int) -> str:
+def create_token(tenant_id: int, csrf: str | None = None) -> str:
     settings = get_settings()
     now = datetime.now(timezone.utc)
-    return jwt.encode({"sub": str(tenant_id), "iat": now, "exp": now + timedelta(minutes=settings.jwt_expire_minutes)}, settings.jwt_secret, algorithm="HS256")
+    return jwt.encode({"sub": str(tenant_id), "iat": now, "exp": now + timedelta(minutes=settings.jwt_expire_minutes), **({'csrf': csrf} if csrf else {})}, settings.jwt_secret, algorithm="HS256")
 
 
-async def current_tenant(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: AsyncSession = Depends(get_db)) -> Tenant:
+async def current_tenant(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: AsyncSession = Depends(get_db), request: Request = None) -> Tenant:
     try:
-        if credentials is None:
+        token = credentials.credentials if credentials else (request.cookies.get('__Host-pricesnap_session') if request else None)
+        if not token:
             raise ValueError("missing token")
-        payload = jwt.decode(credentials.credentials, get_settings().jwt_secret, algorithms=["HS256"], options={"require": ["sub", "exp"]})
+        payload = jwt.decode(token, get_settings().jwt_secret, algorithms=["HS256"], options={"require": ["sub", "exp"]})
+        if not credentials and request and request.method not in ('GET', 'HEAD', 'OPTIONS'):
+            expected = payload.get('csrf')
+            supplied = request.headers.get('x-csrf-token', '')
+            if not isinstance(expected, str) or not hmac.compare_digest(expected, supplied):
+                raise HTTPException(403, 'Неверный CSRF-токен')
         tenant_id = int(payload["sub"])
     except (jwt.InvalidTokenError, ValueError, TypeError, KeyError):
         raise HTTPException(status_code=401, detail="Неверный токен")
@@ -47,13 +54,28 @@ async def current_tenant(credentials: HTTPAuthorizationCredentials | None = Depe
     return tenant
 
 
-async def get_current_admin(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: AsyncSession = Depends(get_db)) -> Tenant:
+async def get_current_admin(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: AsyncSession = Depends(get_db), request: Request = None) -> Tenant:
     try:
-        tenant = await current_tenant(credentials, db)
+        tenant = await current_tenant(credentials, db, request)
     except HTTPException:
         raise HTTPException(status_code=403, detail="Access denied")
     if tenant.email.lower() not in get_settings().admin_emails:
         raise HTTPException(status_code=403, detail="Access denied")
+    secret = get_settings().admin_totp_secret.strip().replace(' ', '').upper()
+    if secret:
+        code = request.headers.get('X-Admin-OTP', '') if request else ''
+        try:
+            key = base64.b32decode(secret + '=' * (-len(secret) % 8), casefold=True)
+            if len(key) < 16 or len(code) != 6 or not code.isascii() or not code.isdigit(): raise ValueError('Invalid OTP')
+            valid = False
+            for counter in range(int(time.time()) // 30 - 1, int(time.time()) // 30 + 2):
+                digest = hmac.new(key, counter.to_bytes(8, 'big'), hashlib.sha1).digest()
+                offset = digest[-1] & 15
+                value = (int.from_bytes(digest[offset:offset + 4], 'big') & 0x7fffffff) % 1000000
+                valid |= hmac.compare_digest(f'{value:06d}', code)
+            if not valid: raise ValueError('Invalid OTP')
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=403, detail='Требуется действующий код администратора')
     return tenant
 
 

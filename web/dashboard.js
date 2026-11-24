@@ -1,13 +1,10 @@
-const token = localStorage.getItem('token');
-if (!token) location.href = '/';
 const byId = id => document.getElementById(id);
 const setText = (id, text) => { const el = byId(id); if (el) el.textContent = text; };
 const setValue = (id, value) => { const el = byId(id); if (el) el.value = value ?? ''; };
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {...options, headers: {Authorization: 'Bearer ' + token, ...options.headers}});
+  const response = await fetch(path, {...options, headers: {...options.headers}});
   if (response.status === 401) {
-    localStorage.removeItem('token');
     location.href = '/';
     throw Error('Сессия завершена');
   }
@@ -99,7 +96,7 @@ async function reconcilePayments() {
     if (returnedFromPayment) setText('message', error.message);
   }
 }
-if (token) reconcilePayments();
+reconcilePayments();
 async function download() {
   try {
     const blob = await (await api('/api/download/agent')).blob();

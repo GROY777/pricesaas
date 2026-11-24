@@ -9,6 +9,7 @@ import time
 import winreg
 import uuid
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests
 import webview
@@ -77,7 +78,12 @@ class AgentAPI:
             try: self._window.evaluate_js('window.agentEvent(' + json.dumps({'type':kind, **data}, ensure_ascii=False) + ')')
             except Exception: pass
     def headers(self): return {'X-API-Key':self.config['key'].strip(), 'X-Device-HWID':self.hwid}
-    def endpoint(self, path): return self.config['url'].strip().rstrip('/') + path
+    def endpoint(self, path):
+        url = self.config['url'].strip().rstrip('/')
+        parsed = urlsplit(url)
+        if parsed.scheme.lower() != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError('Адрес сервера должен использовать HTTPS')
+        return url + path
     def initial(self): return {'config':self.config, 'printers':self.printers(), 'version': AGENT_VERSION, 'update': self.update_info}
     def printers(self):
         try: return [p[2] for p in win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
@@ -96,6 +102,9 @@ class AgentAPI:
     def save(self, config):
         try:
             candidate = {k:config.get(k, self.config[k]) for k in ('url','key','path','printer','autostart')}
+            parsed = urlsplit(candidate['url'].strip())
+            if parsed.scheme.lower() != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+                raise ValueError('Адрес сервера должен использовать HTTPS')
             response = self.http.post(candidate['url'].strip().rstrip('/')+'/api/sync', headers={'X-API-Key':candidate['key'].strip(),'X-Device-HWID':self.hwid}, json=[], timeout=(8,20)); response.raise_for_status()
             write_config(candidate)
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER,RUN_KEY) as key:
